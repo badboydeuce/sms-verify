@@ -8,15 +8,14 @@ from app.config import settings
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
 
-# Global temp storage (use Redis or Database in production)
-payment_records = {}
+payment_records = {}  # Temporary storage (replace with DB later)
 
 @app.route('/paystack/verify', methods=['GET'])
 def paystack_callback():
     reference = request.args.get('reference')
     
     if not reference:
-        return "<h2>Invalid Request</h2>", 400
+        return "<h2>❌ Invalid Request</h2>", 400
 
     result = verify_transaction(reference)
     
@@ -26,18 +25,20 @@ def paystack_callback():
         
         if user_id:
             credit_wallet(user_id, amount, reference)
-            notify_user(user_id, amount)
+            notify_user_on_telegram(user_id, amount)
             
             return f"""
             <h2>✅ Payment Successful!</h2>
             <p><strong>Amount:</strong> ₦{amount:,.0f}</p>
             <p><strong>Reference:</strong> {reference}</p>
-            <p>Your balance has been updated.</p>
+            <p>Your wallet has been credited successfully.</p>
             <hr>
             <p>Thank you for using DeuceVerify!</p>
             """, 200
+        else:
+            return "<h2>✅ Payment Verified but user mapping not found.</h2>", 200
     else:
-        return "<h2>❌ Payment Verification Failed</h2>", 400
+        return "<h2>❌ Payment verification failed.</h2>", 400
 
 
 def verify_transaction(reference):
@@ -45,7 +46,7 @@ def verify_transaction(reference):
     headers = {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"}
     
     try:
-        resp = requests.get(url, headers=headers, timeout=10)
+        resp = requests.get(url, headers=headers, timeout=15)
         data = resp.json()
         
         if data.get("status") and data["data"]["status"] == "success":
@@ -54,29 +55,28 @@ def verify_transaction(reference):
                 "amount": data["data"]["amount"] / 100
             }
     except Exception as e:
-        logger.error(f"Paystack verify error: {e}")
+        logger.error(f"Verification failed: {e}")
     
     return {"success": False}
 
 
 def credit_wallet(user_id, amount, reference):
-    print(f"💰 [RAILWAY] Crediting user {user_id} with ₦{amount} | Ref: {reference}")
-    # TODO: Connect to your database here later
+    print(f"💰 Crediting user {user_id} ₦{amount} | Ref: {reference}")
+    # TODO: Add real wallet logic here later
 
 
-def notify_user(user_id, amount):
+def notify_user_on_telegram(user_id, amount):
     try:
         from telegram import Bot
         bot = Bot(token=settings.BOT_TOKEN)
         bot.send_message(
             chat_id=user_id,
-            text=f"✅ **Payment Confirmed!**\n\n"
-                 f"₦{amount:,.0f} has been added to your wallet.\n"
-                 f"You can now purchase numbers.",
+            text=f"✅ **Payment Successful!**\n\n"
+                 f"₦{amount:,.0f} has been added to your balance.",
             parse_mode='Markdown'
         )
     except Exception as e:
-        logger.error(f"Failed to notify user {user_id}: {e}")
+        logger.error(f"Telegram notify failed: {e}")
 
 
 if __name__ == "__main__":
