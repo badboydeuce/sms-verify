@@ -1,56 +1,55 @@
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+import requests
+import os
+
+SMS_API_KEY = os.getenv("SMS_API_KEY")
 
 
-def main_menu():
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("💳 Wallet Balance", callback_data="wallet"),
-            InlineKeyboardButton("🌍 Buy Number", callback_data="buy")
-        ],
-        [
-            InlineKeyboardButton("📊 My Orders", callback_data="orders"),
-            InlineKeyboardButton("👤 My Profile", callback_data="profile")
-        ],
-        [
-            InlineKeyboardButton("⚙️ Help / Support", callback_data="help")
-        ]
-    ])
+FEATURED_COUNTRIES = [
+    ("🇺🇸 USA", "1"),
+    ("🇬🇧 UK", "2"),
+    ("🇨🇦 Canada", "3"),
+    ("🇩🇪 Germany", "4"),
+    ("🇫🇷 France", "5"),
+    ("🇮🇳 India", "6"),
+    ("🇮🇩 Indonesia", "7"),
+    ("🇳🇬 Nigeria", "8"),
+    ("🇧🇷 Brazil", "9"),
+    ("🇿🇦 South Africa", "10"),
+]
+
+
+def fetch_countries():
+    url = f"https://api.sms-man.com/stubs/handler_api.php"
+    params = {
+        "api_key": SMS_API_KEY,
+        "action": "getCountries"
+    }
+    res = requests.get(url, params=params)
+    return res.json()
 
 
 def countries():
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("🇺🇸 USA", callback_data="c_1"),
-            InlineKeyboardButton("🇬🇧 UK", callback_data="c_2")
-        ],
-        [
-            InlineKeyboardButton("🇮🇩 Indonesia", callback_data="c_3"),
-            InlineKeyboardButton("🇳🇬 Nigeria", callback_data="c_4")
-        ],
-        [
-            InlineKeyboardButton("🌍 More Countries", callback_data="more_countries")
-        ],
-        [
-            InlineKeyboardButton("🔙 Back", callback_data="home")
-        ]
+    data = fetch_countries()
+
+    keyboard = []
+
+    # ⭐ Featured first
+    for name, cid in FEATURED_COUNTRIES:
+        keyboard.append([
+            InlineKeyboardButton(name, callback_data=f"c_{cid}")
+        ])
+
+    keyboard.append([InlineKeyboardButton("────────────", callback_data="ignore")])
+
+    # 🌍 Dynamic list (optional section)
+    for cid, name in list(data.items())[:20]:
+        keyboard.append([
+            InlineKeyboardButton(f"🌍 {name}", callback_data=f"c_{cid}")
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton("🔙 Back", callback_data="home")
     ])
 
-
-def services():
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("📱 WhatsApp", callback_data="s_1"),
-            InlineKeyboardButton("✈️ Telegram", callback_data="s_2")
-        ],
-        [
-            InlineKeyboardButton("📧 Google", callback_data="s_3"),
-            InlineKeyboardButton("📘 Facebook", callback_data="s_4")
-        ],
-        [
-            InlineKeyboardButton("🎵 TikTok", callback_data="s_5"),
-            InlineKeyboardButton("📱 Other", callback_data="s_99")
-        ],
-        [
-            InlineKeyboardButton("🔙 Back", callback_data="buy")
-        ]
-    ])
+    return InlineKeyboardMarkup(keyboard)
