@@ -32,6 +32,7 @@ def buttons(update: Update, context: CallbackContext):
     q.answer()
 
     data = q.data
+    print(f"🔥 CLICKED: {data}")  # DEBUG LOG
 
     # =========================
     # 🌍 BUY FLOW START
@@ -45,21 +46,24 @@ def buttons(update: Update, context: CallbackContext):
     # =========================
     # 🌍 COUNTRY SELECTED
     # =========================
-elif data.startswith("c_"):
-    country_id = int(data.split("_")[1])
-    context.user_data["country"] = country_id
+    elif data.startswith("c_"):
+        country_id = int(data.split("_")[1])
+        context.user_data["country"] = country_id
 
-    q.edit_message_text(
-        "📱 Select service",
-        reply_markup=services(country_id)
-    )
+        q.edit_message_text(
+            "📱 Select service",
+            reply_markup=services(country_id)
+        )
 
     # =========================
     # 📱 SERVICE SELECTED
     # =========================
     elif data.startswith("s_"):
         if "country" not in context.user_data:
-            q.edit_message_text("⚠️ Please select a country first.")
+            q.edit_message_text(
+                "⚠️ Please select a country first.",
+                reply_markup=main_menu()
+            )
             return
 
         service_id = data.split("_")[1]
@@ -67,7 +71,12 @@ elif data.startswith("c_"):
 
         q.edit_message_text("⏳ Purchasing number...")
 
-        res = sms.buy_number(country_id, service_id)
+        try:
+            res = sms.buy_number(country_id, service_id)
+        except Exception as e:
+            print(f"❌ ERROR: {e}")
+            q.edit_message_text("❌ System error. Try again later.")
+            return
 
         if not res or "error" in res:
             q.edit_message_text("❌ Failed to buy number. Try again.")
@@ -83,10 +92,20 @@ elif data.startswith("c_"):
         )
 
     # =========================
-    # 🏠 BACK / HOME (optional)
+    # 🏠 HOME BUTTON
     # =========================
     elif data == "home":
         q.edit_message_text(
             "🏠 Main Menu",
+            reply_markup=main_menu()
+        )
+
+    # =========================
+    # ⚠️ UNKNOWN ACTION
+    # =========================
+    else:
+        print(f"⚠️ UNKNOWN CALLBACK: {data}")
+        q.edit_message_text(
+            "⚠️ Unknown action. Returning to menu.",
             reply_markup=main_menu()
         )
