@@ -1,94 +1,84 @@
-from flask import Flask, request, jsonify
+# app/webhook/paystack_webhook.py
+from flask import Flask, request
 import requests
 import logging
+import os
 from app.config import settings
-from app.services.paystack_service import paystack
 
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
 
-# Store user reference mapping temporarily (use database in production)
-payment_records = {}   # reference -> user_id
-
+# Global temp storage (use Redis or Database in production)
+payment_records = {}
 
 @app.route('/paystack/verify', methods=['GET'])
 def paystack_callback():
     reference = request.args.get('reference')
     
     if not reference:
-        return "Invalid request", 400
+        return "<h2>Invalid Request</h2>", 400
 
-    # Verify transaction with Paystack
-    result = verify_paystack_transaction(reference)
+    result = verify_transaction(reference)
     
     if result['success']:
         user_id = payment_records.get(reference)
+        amount = result['amount']
         
         if user_id:
-            amount = result['amount']
-            # TODO: Credit user's wallet here
-            credit_user_wallet(user_id, amount, reference)
-            
-            # Notify user on Telegram
-            notify_user_on_telegram(user_id, amount)
+            credit_wallet(user_id, amount, reference)
+            notify_user(user_id, amount)
             
             return f"""
             <h2>✅ Payment Successful!</h2>
-            <p>Amount: ₦{amount:,.0f}</p>
-            <p>Reference: {reference}</p>
-            <p>Your wallet has been credited.</p>
+            <p><strong>Amount:</strong> ₦{amount:,.0f}</p>
+            <p><strong>Reference:</strong> {reference}</p>
+            <p>Your balance has been updated.</p>
+            <hr>
+            <p>Thank you for using DeuceVerify!</p>
             """, 200
-        else:
-            return "Payment verified but user not found.", 200
     else:
-        return f"Payment verification failed: {result.get('error')}", 400
+        return "<h2>❌ Payment Verification Failed</h2>", 400
 
 
-def verify_paystack_transaction(reference: str):
-    """Verify transaction with Paystack"""
+def verify_transaction(reference):
     url = f"https://api.paystack.co/transaction/verify/{reference}"
-    headers = {
-        "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"
-    }
+    headers = {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"}
     
     try:
-        response = requests.get(url, headers=headers)
-        data = response.json()
+        resp = requests.get(url, headers=headers, timeout=10)
+        data = resp.json()
         
         if data.get("status") and data["data"]["status"] == "success":
             return {
                 "success": True,
-                "amount": data["data"]["amount"] / 100,  # Convert from kobo
-                "reference": reference
+                "amount": data["data"]["amount"] / 100
             }
-        else:
-            return {"success": False, "error": "Transaction not successful"}
-            
     except Exception as e:
-        logger.error(f"Verification error: {e}")
-        return {"success": False, "error": str(e)}
+        logger.error(f"Paystack verify error: {e}")
+    
+    return {"success": False}
 
 
-def credit_user_wallet(user_id: int, amount: float, reference: str):
-    """TODO: Implement wallet credit logic"""
-    print(f"💰 Crediting user {user_id} with ₦{amount} | Ref: {reference}")
-    # Add to database here later
+def credit_wallet(user_id, amount, reference):
+    print(f"💰 [RAILWAY] Crediting user {user_id} with ₦{amount} | Ref: {reference}")
+    # TODO: Connect to your database here later
 
 
-def notify_user_on_telegram(user_id: int, amount: float):
-    """Send success message to user via Telegram Bot"""
-    from telegram import Bot
-    bot = Bot(token=settings.BOT_TOKEN)
+def notify_user(user_id, amount):
     try:
+        from telegram import Bot
+        bot = Bot(token=settings.BOT_TOKEN)
         bot.send_message(
             chat_id=user_id,
-            text=f"✅ **Payment Successful!**\n\n"
+            text=f"✅ **Payment Confirmed!**\n\n"
                  f"₦{amount:,.0f} has been added to your wallet.\n"
-                 f"You can now buy numbers."
+                 f"You can now purchase numbers.",
+            parse_mode='Markdown'
         )
-    except:
-        pass  # User might have blocked bot
+    except Exception as e:
+        logger.error(f"Failed to notify user {user_id}: {e}")
 
 
-if __name__ == '__main__':
-    app.run(port=5000, debug=True)
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
