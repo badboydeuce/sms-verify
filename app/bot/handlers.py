@@ -45,17 +45,14 @@ def buttons(update: Update, context: CallbackContext):
     # =========================
     # 🌍 COUNTRY SELECTED
     # =========================
-    elif data.startswith("c_"):
-        country_id = int(data.split("_")[1])
-        context.user_data["country"] = country_id
+elif data.startswith("c_"):
+    country_id = int(data.split("_")[1])
+    context.user_data["country"] = country_id
 
-        q.edit_message_text(
-            "📱 Loading services...",
-        )
-
-        q.message.edit_reply_markup(
-            reply_markup=services(country_id)
-        )
+    q.edit_message_text(
+        "📱 Select service",
+        reply_markup=services(country_id)
+    )
 
     # =========================
     # 📱 SERVICE SELECTED
