@@ -1,11 +1,12 @@
-from telegram import Update
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import CallbackContext
 
-from app.bot.keyboards import main_menu, countries, services
+from app.bot.keyboards import (
+    main_menu, countries, services, 
+    payment_menu, crypto_menu, paystack_menu
+)
 from app.services.sms_service import SMSService
-
-# Import payment keyboards (we'll create this)
-from app.bot.keyboards import payment_menu, crypto_menu, paystack_menu
+from app.services.paystack_service import paystack   # Paystack service
 
 sms = SMSService()
 
@@ -15,7 +16,6 @@ sms = SMSService()
 # =========================
 def start(update: Update, context: CallbackContext):
     context.user_data.clear()
-
     update.message.reply_text(
         "👋 Welcome to DeuceVerify\n\n"
         "🚀 Instant SMS verification gateway\n"
@@ -35,11 +35,13 @@ def buttons(update: Update, context: CallbackContext):
     q.answer()
 
     data = q.data
+    user_id = q.from_user.id
+
     print(f"🔥 CLICKED: {data}")  # DEBUG LOG
 
-    # =========================
+    # ========================
     # 💰 ADD BALANCE FLOW
-    # =========================
+    # ========================
     if data == "add_balance":
         q.edit_message_text(
             "💰 **Add Balance**\n\nChoose payment method:",
@@ -62,18 +64,15 @@ def buttons(update: Update, context: CallbackContext):
         )
 
     elif data == "paystack_create":
-        # TODO: Call Paystack service here
-        q.edit_message_text("⏳ Generating Paystack payment link...\n\nPlease wait.")
-        # handle_paystack_payment(q, context)
+        handle_paystack_payment(q, user_id)
 
     elif data.startswith("crypto_"):
         coin = data.split("_")[1]
         q.edit_message_text(f"🔄 Generating {coin.upper()} deposit address...\n\nPlease wait.")
-        # handle_crypto_deposit(q, context, coin)
 
-    # =========================
-    # 🌍 BUY FLOW (Your existing code)
-    # =========================
+    # ========================
+    # 🌍 BUY FLOW
+    # ========================
     elif data == "buy":
         q.edit_message_text(
             "🌍 Select your country",
@@ -83,7 +82,6 @@ def buttons(update: Update, context: CallbackContext):
     elif data.startswith("c_"):
         country_id = int(data.split("_")[1])
         context.user_data["country"] = country_id
-
         q.edit_message_text(
             "📱 Select service",
             reply_markup=services(country_id)
@@ -122,13 +120,46 @@ def buttons(update: Update, context: CallbackContext):
             "⏳ Waiting for OTP..."
         )
 
-    # =========================
+    # ========================
     # 🏠 HOME BUTTON
-    # =========================
+    # ========================
     elif data == "home":
         q.edit_message_text(
             "🏠 Main Menu",
             reply_markup=main_menu()
         )
 
-    # Add more handlers as needed...
+
+# =========================
+# PAYSTACK HANDLER
+# =========================
+def handle_paystack_payment(query, user_id: int):
+    """Handle Paystack payment link generation"""
+    email = f"user_{user_id}@deuceverify.com"   # Improve later with real user email
+
+    amount_in_kobo = 500000  # Default = ₦5,000
+
+    result = paystack.initialize_transaction(
+        email=email,
+        amount=amount_in_kobo,
+        user_id=user_id
+    )
+
+    if result.get("success"):
+        paystack.save_payment_record(result["reference"], user_id)
+
+        keyboard = [[InlineKeyboardButton("💳 Pay Now on Paystack", url=result["authorization_url"])]]
+
+        query.edit_message_text(
+            text=f"✅ **Payment Link Generated**\n\n"
+                 f"Amount: **₦{result['amount']:,.0f}**\n"
+                 f"Reference: `{result['reference']}`\n\n"
+                 f"Click the button below to complete payment:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+    else:
+        query.edit_message_text(
+            f"❌ Failed to generate payment link.\n\n"
+            f"Error: {result.get('error', 'Unknown error')}"
+        )
