@@ -1,16 +1,24 @@
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from app.services.smsman_api import get_countries, get_services
-from telegram import ReplyKeyboardMarkup
+
 
 # =========================
 # 🏠 MAIN MENU
 # =========================
 def main_menu():
-    keyboard = [
-        ["📲 Buy Number", "📥 Get SMS"],
-        ["💰 Wallet", "ℹ️ Help"]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("💳 Wallet Balance", callback_data="wallet"),
+            InlineKeyboardButton("🌍 Buy Number", callback_data="buy")
+        ],
+        [
+            InlineKeyboardButton("📊 My Orders", callback_data="orders"),
+            InlineKeyboardButton("👤 My Profile", callback_data="profile")
+        ],
+        [
+            InlineKeyboardButton("⚙️ Help / Support", callback_data="help")
+        ]
+    ])
 
 
 # ⭐ Featured countries
