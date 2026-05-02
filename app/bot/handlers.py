@@ -4,6 +4,9 @@ from telegram.ext import CallbackContext
 from app.bot.keyboards import main_menu, countries, services
 from app.services.sms_service import SMSService
 
+# Import payment keyboards (we'll create this)
+from app.bot.keyboards import payment_menu, crypto_menu, paystack_menu
+
 sms = SMSService()
 
 
@@ -35,17 +38,48 @@ def buttons(update: Update, context: CallbackContext):
     print(f"🔥 CLICKED: {data}")  # DEBUG LOG
 
     # =========================
-    # 🌍 BUY FLOW START
+    # 💰 ADD BALANCE FLOW
     # =========================
-    if data == "buy":
+    if data == "add_balance":
+        q.edit_message_text(
+            "💰 **Add Balance**\n\nChoose payment method:",
+            reply_markup=payment_menu(),
+            parse_mode='Markdown'
+        )
+
+    elif data == "crypto":
+        q.edit_message_text(
+            "🔗 **Crypto Payment**\n\nSelect cryptocurrency:",
+            reply_markup=crypto_menu(),
+            parse_mode='Markdown'
+        )
+
+    elif data == "paystack":
+        q.edit_message_text(
+            "🇳🇬 **Pay with Naira**\n\nClick below to generate Paystack payment link:",
+            reply_markup=paystack_menu(),
+            parse_mode='Markdown'
+        )
+
+    elif data == "paystack_create":
+        # TODO: Call Paystack service here
+        q.edit_message_text("⏳ Generating Paystack payment link...\n\nPlease wait.")
+        # handle_paystack_payment(q, context)
+
+    elif data.startswith("crypto_"):
+        coin = data.split("_")[1]
+        q.edit_message_text(f"🔄 Generating {coin.upper()} deposit address...\n\nPlease wait.")
+        # handle_crypto_deposit(q, context, coin)
+
+    # =========================
+    # 🌍 BUY FLOW (Your existing code)
+    # =========================
+    elif data == "buy":
         q.edit_message_text(
             "🌍 Select your country",
             reply_markup=countries()
         )
 
-    # =========================
-    # 🌍 COUNTRY SELECTED
-    # =========================
     elif data.startswith("c_"):
         country_id = int(data.split("_")[1])
         context.user_data["country"] = country_id
@@ -55,9 +89,6 @@ def buttons(update: Update, context: CallbackContext):
             reply_markup=services(country_id)
         )
 
-    # =========================
-    # 📱 SERVICE SELECTED
-    # =========================
     elif data.startswith("s_"):
         if "country" not in context.user_data:
             q.edit_message_text(
@@ -100,12 +131,4 @@ def buttons(update: Update, context: CallbackContext):
             reply_markup=main_menu()
         )
 
-    # =========================
-    # ⚠️ UNKNOWN ACTION
-    # =========================
-    else:
-        print(f"⚠️ UNKNOWN CALLBACK: {data}")
-        q.edit_message_text(
-            "⚠️ Unknown action. Returning to menu.",
-            reply_markup=main_menu()
-        )
+    # Add more handlers as needed...
