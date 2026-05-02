@@ -7,7 +7,15 @@ from app.services.sms_service import SMSService
 sms = SMSService()
 
 def start(update: Update, context: CallbackContext):
-    update.message.reply_text("Welcome", reply_markup=main_menu())
+    update.message.reply_text(
+        "👋 Welcome to DeuceVerify\n\n"
+        "🚀 Instant SMS verification gateway\n"
+        "🌍 Buy virtual numbers in seconds\n"
+        "📩 Receive OTP automatically\n"
+        "💰 Pay only for what you use\n\n"
+        "Choose an option below to continue 👇",
+        reply_markup=main_menu()
+    )
 
 def buttons(update: Update, context: CallbackContext):
     q = update.callback_query
