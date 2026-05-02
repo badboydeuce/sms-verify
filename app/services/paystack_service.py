@@ -53,3 +53,8 @@ class PaystackService:
 
 # Singleton
 paystack = PaystackService()
+
+    def save_payment_record(self, reference: str, user_id: int):
+        """Temporarily save reference -> user mapping"""
+        from app.webhook.paystack_webhook import payment_records
+        payment_records[reference] = user_id
