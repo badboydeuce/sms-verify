@@ -130,36 +130,45 @@ def buttons(update: Update, context: CallbackContext):
         )
 
 
-# =========================
-# PAYSTACK HANDLER
-# =========================
-def handle_paystack_payment(query, user_id: int):
-    """Handle Paystack payment link generation"""
-    email = f"user_{user_id}@deuceverify.com"   # Improve later with real user email
-
-    amount_in_kobo = 500000  # Default = ₦5,000
-
-    result = paystack.initialize_transaction(
-        email=email,
-        amount=amount_in_kobo,
-        user_id=user_id
-    )
-
-    if result.get("success"):
-        paystack.save_payment_record(result["reference"], user_id)
-
-        keyboard = [[InlineKeyboardButton("💳 Pay Now on Paystack", url=result["authorization_url"])]]
-
-        query.edit_message_text(
-            text=f"✅ **Payment Link Generated**\n\n"
-                 f"Amount: **₦{result['amount']:,.0f}**\n"
-                 f"Reference: `{result['reference']}`\n\n"
-                 f"Click the button below to complete payment:",
-            reply_markup=InlineKeyboardMarkup(keyboard),
+    # =========================
+    # 💰 PAYSTACK AMOUNT SELECTION
+    # =========================
+    elif data == "paystack":
+        q.edit_message_text(
+            "🇳🇬 **Pay with Naira via Paystack**\n\n"
+            "Choose amount to add:",
+            reply_markup=paystack_amount_menu(),
             parse_mode='Markdown'
         )
-    else:
-        query.edit_message_text(
-            f"❌ Failed to generate payment link.\n\n"
-            f"Error: {result.get('error', 'Unknown error')}"
-        )
+
+    elif data.startswith("paystack_"):
+        try:
+            amount_naira = int(data.split("_")[1])
+            amount_kobo = amount_naira * 100
+            user_id = q.from_user.id
+            email = f"user_{user_id}@deuceverify.com"  # You can improve this later
+
+            result = paystack.initialize_transaction(
+                email=email,
+                amount=amount_kobo,
+                user_id=user_id
+            )
+
+            if result.get("success"):
+                # Save reference for webhook
+                paystack.save_payment_record(result["reference"], user_id)
+
+                keyboard = [[InlineKeyboardButton("💳 Pay Now", url=result["authorization_url"])]]
+                
+                q.edit_message_text(
+                    text=f"✅ **Payment Link Generated**\n\n"
+                         f"Amount: **₦{amount_naira:,}**\n"
+                         f"Reference: `{result['reference']}`\n\n"
+                         f"Click the button below to complete payment:",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode='Markdown'
+                )
+            else:
+                q.edit_message_text("❌ Failed to generate payment link. Try again.")
+        except Exception as e:
+            q.edit_message_text(f"❌ Error: {str(e)}")
