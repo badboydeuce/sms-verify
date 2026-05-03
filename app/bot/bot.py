@@ -1,43 +1,21 @@
-import logging
-from telegram.ext import Updater, CommandHandler, CallbackQueryHandler
+from aiogram import Bot, Dispatcher
+import asyncio
+import os
 
-from app.bot.handlers import start, buttons
-from app.config import settings
+from app.bot.handlers import start, buy
 
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# =========================
-# LOGGING SETUP
-# =========================
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
-)
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
 
-logger = logging.getLogger(__name__)
+dp.include_router(start.router)
+dp.include_router(buy.router)
 
 
-# =========================
-# BOT START FUNCTION
-# =========================
+async def main():
+    await dp.start_polling(bot)
+
+
 def run_bot():
-    try:
-        updater = Updater(settings.BOT_TOKEN, use_context=True)
-        dp = updater.dispatcher
-
-        # =========================
-        # HANDLERS
-        # =========================
-        dp.add_handler(CommandHandler("start", start))
-        dp.add_handler(CallbackQueryHandler(buttons))
-
-        logger.info("🚀 Bot is starting...")
-
-        # =========================
-        # START BOT
-        # =========================
-        updater.start_polling()
-        updater.idle()
-
-    except Exception as e:
-        logger.error(f"❌ Bot crashed: {e}")
-        raise
+    asyncio.run(main())
