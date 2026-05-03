@@ -15,20 +15,18 @@ class PaystackService:
         }
 
     def initialize_transaction(self, email: str, amount: int, user_id: int, metadata=None):
-        """
-        amount: in Kobo (e.g. 5000 = ₦50)
-        """
+        """Create payment session"""
         url = f"{self.BASE_URL}/transaction/initialize"
 
         payload = {
             "email": email,
-            "amount": amount,           # in kobo
+            "amount": amount,  # in kobo
             "currency": "NGN",
             "metadata": {
                 "user_id": user_id,
                 **(metadata or {})
             },
-            "callback_url": settings.PAYSTACK_CALLBACK_URL,  # e.g. https://yourdomain.com/verify
+            "callback_url": settings.PAYSTACK_CALLBACK_URL,
         }
 
         try:
@@ -40,21 +38,25 @@ class PaystackService:
                     "success": True,
                     "authorization_url": data["data"]["authorization_url"],
                     "reference": data["data"]["reference"],
-                    "amount": amount / 100  # back to Naira
+                    "amount": amount / 100
                 }
             else:
-                logger.error(f"Paystack error: {data}")
+                logger.error(f"Paystack error: {data.get('message')}")
                 return {"success": False, "error": data.get("message")}
 
         except Exception as e:
             logger.error(f"Paystack request failed: {e}")
             return {"success": False, "error": str(e)}
 
-
-# Singleton
-paystack = PaystackService()
-
     def save_payment_record(self, reference: str, user_id: int):
-        """Temporarily save reference -> user mapping"""
-        from app.webhook.paystack_webhook import payment_records
-        payment_records[reference] = user_id
+        """Save reference for later verification"""
+        try:
+            from app.webhook.paystack_webhook import payment_records
+            payment_records[reference] = user_id
+            logger.info(f"Saved payment record: {reference} -> user {user_id}")
+        except Exception as e:
+            logger.error(f"Failed to save payment record: {e}")
+
+
+# Singleton instance
+paystack = PaystackService()
