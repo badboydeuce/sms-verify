@@ -1,6 +1,23 @@
-from app.database import init_db
-from app.bot.bot import run_bot
+# app/main.py
 
-if __name__ == "__main__":
-    init_db()
-    run_bot()
+from flask import Flask
+from app.routes.numbers import numbers_bp
+from app.routes.otp import otp_bp
+
+
+def create_app():
+    app = Flask(__name__)
+
+    # Register routes
+    app.register_blueprint(numbers_bp, url_prefix="/numbers")
+    app.register_blueprint(otp_bp, url_prefix="/otp")
+
+    @app.route("/")
+    def home():
+        return {"status": "API running"}
+
+    return app
+
+
+# This is what Gunicorn uses
+app = create_app()
