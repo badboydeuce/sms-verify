@@ -4,59 +4,67 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+
 class PaystackService:
     BASE_URL = "https://api.paystack.co"
 
     def __init__(self):
         self.secret_key = settings.PAYSTACK_SECRET_KEY
+
         self.headers = {
             "Authorization": f"Bearer {self.secret_key}",
             "Content-Type": "application/json"
         }
 
-    def initialize_transaction(self, email: str, amount: int, user_id: int, metadata=None):
-        """Initialize Paystack transaction (amount in kobo)"""
+    # =========================
+    # 💰 INIT PAYMENT
+    # =========================
+    def initialize_transaction(self, email, amount, user_id):
         url = f"{self.BASE_URL}/transaction/initialize"
 
         payload = {
             "email": email,
-            "amount": amount,          # Must be in kobo
+            "amount": amount,
             "currency": "NGN",
-            "metadata": {
-                "user_id": user_id,
-                **(metadata or {})
-            },
-            "callback_url": settings.PAYSTACK_CALLBACK_URL,
+            "metadata": {"user_id": user_id},
+            "callback_url": settings.PAYSTACK_CALLBACK_URL
         }
 
         try:
-            response = requests.post(url, json=payload, headers=self.headers, timeout=15)
-            data = response.json()
+            res = requests.post(url, json=payload, headers=self.headers, timeout=15)
+            data = res.json()
 
-            if data.get("status") is True:
+            if data.get("status"):
                 return {
                     "success": True,
                     "authorization_url": data["data"]["authorization_url"],
-                    "reference": data["data"]["reference"],
-                    "amount": amount / 100  # Convert back to Naira for display
+                    "reference": data["data"]["reference"]
                 }
-            else:
-                logger.error(f"Paystack API error: {data.get('message')}")
-                return {"success": False, "error": data.get("message", "Unknown error")}
+
+            return {"success": False, "error": data.get("message")}
 
         except Exception as e:
-            logger.error(f"Paystack request failed: {e}")
+            logger.error(e)
             return {"success": False, "error": str(e)}
 
-    def save_payment_record(self, reference: str, user_id: int):
-        """Save reference → user mapping for webhook"""
+    # =========================
+    # 🔍 VERIFY
+    # =========================
+    def verify_transaction(self, reference):
+        url = f"{self.BASE_URL}/transaction/verify/{reference}"
+
         try:
-            from app.webhook.paystack_webhook import payment_records
-            payment_records[reference] = user_id
-            logger.info(f"Payment record saved: {reference} -> User {user_id}")
+            res = requests.get(url, headers=self.headers, timeout=15)
+            data = res.json()
+
+            if data.get("status") and data["data"]["status"] == "success":
+                return {
+                    "success": True,
+                    "amount": data["data"]["amount"] / 100
+                }
+
+            return {"success": False}
+
         except Exception as e:
-            logger.error(f"Failed to save payment record: {e}")
-
-
-# Singleton
-paystack = PaystackService()
+            logger.error(e)
+            return {"success": False}
