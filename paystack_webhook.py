@@ -1,84 +1,129 @@
-# app/webhook/paystack_webhook.py
-from flask import Flask, request
+from flask import Flask, request, jsonify
 import requests
 import logging
-import os
+
 from app.config import settings
+from app.services.wallet_service import WalletService
+from app.services.payment_store import PaymentStore
 
 app = Flask(__name__)
+
 logger = logging.getLogger(__name__)
 
-payment_records = {}  # Temporary storage (replace with DB later)
+wallet = WalletService()
+payments = PaymentStore()
 
+
+# =========================
+# 🔗 PAYSTACK CALLBACK ROUTE
+# =========================
 @app.route('/paystack/verify', methods=['GET'])
 def paystack_callback():
     reference = request.args.get('reference')
-    
+
     if not reference:
-        return "<h2>❌ Invalid Request</h2>", 400
+        return jsonify({"error": "Invalid reference"}), 400
 
+    # =========================
+    # 🔍 VERIFY PAYMENT
+    # =========================
     result = verify_transaction(reference)
-    
-    if result['success']:
-        user_id = payment_records.get(reference)
-        amount = result['amount']
-        
-        if user_id:
-            credit_wallet(user_id, amount, reference)
-            notify_user_on_telegram(user_id, amount)
-            
-            return f"""
-            <h2>✅ Payment Successful!</h2>
-            <p><strong>Amount:</strong> ₦{amount:,.0f}</p>
-            <p><strong>Reference:</strong> {reference}</p>
-            <p>Your wallet has been credited successfully.</p>
-            <hr>
-            <p>Thank you for using DeuceVerify!</p>
-            """, 200
-        else:
-            return "<h2>✅ Payment Verified but user mapping not found.</h2>", 200
-    else:
-        return "<h2>❌ Payment verification failed.</h2>", 400
+
+    if not result.get("success"):
+        return jsonify({"error": "Payment verification failed"}), 400
+
+    user_id, amount = payments.get_user(reference) or (None, None)
+
+    if not user_id:
+        return jsonify({"error": "User not found"}), 404
+
+    # =========================
+    # 🛡️ AVOID DOUBLE CREDIT
+    # =========================
+    if is_already_processed(reference):
+        return jsonify({"message": "Already processed"}), 200
+
+    # =========================
+    # 💰 CREDIT WALLET
+    # =========================
+    wallet.add_balance(user_id, amount)
+
+    payments.mark_success(reference)
+
+    notify_user(user_id, amount)
+
+    return jsonify({
+        "status": "success",
+        "message": "Wallet credited",
+        "amount": amount
+    }), 200
 
 
-def verify_transaction(reference):
+# =========================
+# 🔍 VERIFY TRANSACTION
+# =========================
+def verify_transaction(reference: str):
     url = f"https://api.paystack.co/transaction/verify/{reference}"
     headers = {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"}
-    
+
     try:
-        resp = requests.get(url, headers=headers, timeout=15)
-        data = resp.json()
-        
+        res = requests.get(url, headers=headers, timeout=15)
+        data = res.json()
+
         if data.get("status") and data["data"]["status"] == "success":
             return {
                 "success": True,
                 "amount": data["data"]["amount"] / 100
             }
+
+        return {"success": False}
+
     except Exception as e:
-        logger.error(f"Verification failed: {e}")
-    
-    return {"success": False}
+        logger.error(f"Verify error: {e}")
+        return {"success": False}
 
 
-def credit_wallet(user_id, amount, reference):
-    print(f"💰 Crediting user {user_id} ₦{amount} | Ref: {reference}")
-    # TODO: Add real wallet logic here later
+# =========================
+# 🛡️ IDEMPOTENCY CHECK
+# =========================
+def is_already_processed(reference: str) -> bool:
+    from app.services.database import get_connection
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT status FROM payments WHERE reference=?", (reference,))
+    row = cur.fetchone()
+
+    conn.close()
+
+    return row and row[0] == "success"
 
 
-def notify_user_on_telegram(user_id, amount):
+# =========================
+# 📲 NOTIFY USER
+# =========================
+def notify_user(user_id: int, amount: float):
     try:
         from telegram import Bot
+
         bot = Bot(token=settings.BOT_TOKEN)
+
         bot.send_message(
             chat_id=user_id,
-            text=f"✅ **Payment Successful!**\n\n"
-                 f"₦{amount:,.0f} has been added to your balance.",
-            parse_mode='Markdown'
+            text=(
+                "✅ *Payment Successful!*\n\n"
+                f"💰 ₦{amount:,.2f} has been added to your wallet."
+            ),
+            parse_mode="Markdown"
         )
+
     except Exception as e:
         logger.error(f"Telegram notify failed: {e}")
 
 
+# =========================
+# 🚀 RUN (DEV ONLY)
+# =========================
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=5000)
