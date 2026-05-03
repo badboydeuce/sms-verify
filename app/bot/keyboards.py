@@ -99,3 +99,15 @@ def services(country_id: int):
     keyboard.append([InlineKeyboardButton("🔙 Back to Countries", callback_data="buy")])
 
     return InlineKeyboardMarkup(keyboard)
+
+
+def paystack_amount_menu():
+    """Amount selection for Paystack"""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("₦1,000", callback_data="paystack_1000")],
+        [InlineKeyboardButton("₦2,000", callback_data="paystack_2000")],
+        [InlineKeyboardButton("₦5,000", callback_data="paystack_5000")],
+        [InlineKeyboardButton("₦10,000", callback_data="paystack_10000")],
+        [InlineKeyboardButton("₦20,000", callback_data="paystack_20000")],
+        [InlineKeyboardButton("🔙 Back", callback_data="paystack")]
+    ])
