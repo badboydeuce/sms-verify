@@ -1,7 +1,10 @@
-from telegram import Update
+# app/routes/numbers.py
+
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes, CallbackQueryHandler
 
 from app.bot.keyboards import countries, services, main_menu
+
 from app.services.smsman_api import (
     get_countries,
     get_services,
@@ -10,12 +13,22 @@ from app.services.smsman_api import (
     cancel_number
 )
 
+from app.services.wallet_service import WalletService
+
+wallet = WalletService()
+
 # =========================
 # 🧠 TEMP STORAGE (replace with DB later)
 # =========================
-user_sessions = {}   # user_id -> {country_id, service_id}
-orders = {}          # user_id -> {order_id, number}
+user_sessions = {}
+orders = {}
 
+# Example pricing (move to DB later)
+PRICES = {
+    "whatsapp": 50,
+    "telegram": 40,
+    "facebook": 30
+}
 
 # =========================
 # 🌍 BUY NUMBER (STEP 1)
@@ -35,7 +48,7 @@ async def handle_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =========================
-# 🌍 SELECT COUNTRY (STEP 2)
+# 🌍 SELECT COUNTRY
 # =========================
 async def handle_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -58,39 +71,72 @@ async def handle_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =========================
-# 📱 SELECT SERVICE (STEP 3)
+# 📱 SELECT SERVICE + BUY
 # =========================
 async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
     service_id = query.data.split("_")[1]
-    user_id = query.from_user.id
+    user_id = str(query.from_user.id)
 
-    session = user_sessions.get(user_id)
+    session = user_sessions.get(query.from_user.id)
 
     if not session:
         await query.message.edit_text(
-            "❌ Session expired. Please start again.",
+            "❌ Session expired.",
             reply_markup=main_menu()
         )
         return
 
     country_id = session["country_id"]
 
+    price = PRICES.get(service_id, 50)
+
+    # =========================
+    # 💰 WALLET CHECK
+    # =========================
+    balance = wallet.get_balance(user_id)
+
+    if balance < price:
+        await query.message.edit_text(
+            f"❌ Insufficient balance\n\n"
+            f"Balance: ₦{balance}\n"
+            f"Required: ₦{price}"
+        )
+        return
+
     await query.message.edit_text("⏳ Buying number...")
 
+    # =========================
+    # ➖ DEDUCT WALLET
+    # =========================
+    success = wallet.deduct_balance(
+        user_id=user_id,
+        amount=price,
+        reference=f"SMS-{service_id}"
+    )
+
+    if not success:
+        await query.message.edit_text("❌ Wallet error.")
+        return
+
+    # =========================
+    # 📞 BUY NUMBER
+    # =========================
     result = buy_number(country_id, service_id)
 
     if not result or "number" not in result:
+        wallet.add_balance(user_id, price)
+
         await query.message.edit_text(
-            "❌ Failed to buy number. Try again later.",
+            "❌ Failed to buy number. Refunded.",
             reply_markup=main_menu()
         )
         return
 
     number = result["number"]
-    order_id = result["id"]
+    order_id = result.get("order_id") or result.get("id")
 
     # Save order
     orders[user_id] = {
@@ -100,8 +146,7 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.message.edit_text(
         f"📞 Number: `{number}`\n\n"
-        f"⏳ Waiting for SMS...\n\n"
-        f"Click below to check OTP",
+        "⏳ Waiting for SMS...",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
             [
@@ -123,22 +168,17 @@ async def handle_check_sms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     order = orders.get(user_id)
 
     if not order:
-        await query.message.edit_text(
-            "❌ No active order.",
-            reply_markup=main_menu()
-        )
+        await query.message.edit_text("❌ No active order.")
         return
 
-    order_id = order["order_id"]
+    sms_code = get_sms(order["order_id"])
 
-    sms = get_sms(order_id)
-
-    if not sms:
-        await query.answer("⏳ No SMS yet...", show_alert=True)
+    if not sms_code:
+        await query.answer("⏳ No SMS yet", show_alert=True)
         return
 
     await query.message.edit_text(
-        f"✅ OTP Received:\n\n`{sms}`",
+        f"✅ OTP:\n\n`{sms_code}`",
         parse_mode="Markdown",
         reply_markup=main_menu()
     )
@@ -154,29 +194,21 @@ async def handle_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     order = orders.get(user_id)
 
-    if not order:
-        await query.message.edit_text(
-            "❌ No active order.",
-            reply_markup=main_menu()
-        )
-        return
+    if order:
+        cancel_number(order["order_id"])
 
-    order_id = order["order_id"]
-
-    cancel_number(order_id)
-
-    # TODO: refund logic here
+        # NOTE: refund logic can be added here if needed
 
     orders.pop(user_id, None)
 
     await query.message.edit_text(
-        "❌ Order cancelled.\n💰 Refund will be processed.",
+        "❌ Cancelled.",
         reply_markup=main_menu()
     )
 
 
 # =========================
-# 🔗 REGISTER HANDLERS
+# 🔗 REGISTER
 # =========================
 def register_handlers(application):
     application.add_handler(CallbackQueryHandler(handle_buy, pattern="^buy$"))
