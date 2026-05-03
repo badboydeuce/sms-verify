@@ -3,8 +3,11 @@
 import requests
 import logging
 from app.config import settings
+from app.services.wallet_service import WalletService
 
 logger = logging.getLogger(__name__)
+
+wallet = WalletService()
 
 
 class PaystackService:
@@ -22,32 +25,22 @@ class PaystackService:
     # 💰 INITIALIZE TRANSACTION
     # =========================
     def initialize_transaction(self, email, amount, telegram_id):
-        """
-        Creates Paystack payment link with metadata for wallet crediting
-        """
 
         url = f"{self.BASE_URL}/transaction/initialize"
 
         payload = {
             "email": email,
-
-            # Paystack expects amount in kobo
-            "amount": int(amount * 100),
-
+            "amount": int(amount * 100),  # kobo
             "currency": "NGN",
-
-            # 🔥 IMPORTANT: used for wallet mapping in webhook
             "metadata": {
                 "telegram_id": str(telegram_id),
                 "purpose": "wallet_funding"
             },
-
-            # optional redirect after payment
             "callback_url": settings.PAYSTACK_CALLBACK_URL
         }
 
         try:
-            logger.info(f"Initializing Paystack payment for {email} (TG: {telegram_id})")
+            logger.info(f"Init payment: {email} | TG: {telegram_id}")
 
             res = requests.post(
                 url,
@@ -65,26 +58,19 @@ class PaystackService:
                     "reference": data["data"]["reference"]
                 }
 
-            logger.error(f"Paystack init failed: {data}")
             return {
                 "success": False,
-                "error": data.get("message", "Payment initialization failed")
+                "error": data.get("message", "Init failed")
             }
 
         except Exception as e:
-            logger.exception("Paystack initialization error")
-            return {
-                "success": False,
-                "error": str(e)
-            }
+            logger.exception("Paystack init error")
+            return {"success": False, "error": str(e)}
 
     # =========================
     # 🔍 VERIFY TRANSACTION
     # =========================
     def verify_transaction(self, reference):
-        """
-        Verifies Paystack transaction using reference
-        """
 
         url = f"{self.BASE_URL}/transaction/verify/{reference}"
 
@@ -104,20 +90,52 @@ class PaystackService:
             ):
                 return {
                     "success": True,
-                    "amount": data["data"]["amount"] / 100,  # convert kobo → NGN
+                    "amount": data["data"]["amount"] / 100,
                     "email": data["data"]["customer"]["email"],
-                    "reference": reference
+                    "reference": reference,
+                    "telegram_id": data["data"]["metadata"].get("telegram_id")
                 }
 
-            logger.warning(f"Verification failed: {data}")
             return {
                 "success": False,
                 "error": "Transaction not successful"
             }
 
         except Exception as e:
-            logger.exception("Paystack verification error")
-            return {
-                "success": False,
-                "error": str(e)
-            }
+            logger.exception("Paystack verify error")
+            return {"success": False, "error": str(e)}
+
+    # =========================
+    # 💰 CREDIT WALLET (IMPORTANT)
+    # =========================
+    def credit_wallet(self, telegram_id: str, amount: float, reference: str):
+        """
+        Safe wallet credit with duplicate protection
+        """
+
+        try:
+            # prevent double credit (IMPORTANT)
+            conn = wallet.get_connection()
+            cur = conn.cursor()
+
+            cur.execute(
+                "SELECT 1 FROM transactions WHERE reference=?",
+                (reference,)
+            )
+
+            if cur.fetchone():
+                logger.warning("Duplicate Paystack credit blocked")
+                return False
+
+            conn.close()
+
+            # credit wallet
+            return wallet.add_balance(
+                user_id=telegram_id,
+                amount=amount,
+                reference=reference
+            )
+
+        except Exception as e:
+            logger.exception("Wallet credit error")
+            return False
