@@ -23,7 +23,14 @@ user_state = {}
 @router.message(lambda msg: msg.text == "🛒 Buy Number")
 async def start_buy(message: types.Message):
 
-    data = get_countries()
+    # ✅ FIX: await async call
+    data = await get_countries()
+
+    # handle empty response safely
+    if not data:
+        await message.answer("❌ Failed to load countries. Try again.")
+        return
+
     countries = list(data.keys())[:5]
 
     user_state[message.from_user.id] = {}
@@ -35,7 +42,7 @@ async def start_buy(message: types.Message):
 
 
 # =========================
-# 🌍 SELECT COUNTRY
+# 🌍 SELECT COUNTRY + SERVICE FLOW
 # =========================
 @router.message()
 async def handle_steps(message: types.Message):
@@ -47,11 +54,19 @@ async def handle_steps(message: types.Message):
 
     state = user_state[user_id]
 
-    # STEP 1: country
+    # =========================
+    # STEP 1: SELECT COUNTRY
+    # =========================
     if "country" not in state:
         state["country"] = message.text
 
-        services = get_services(message.text)
+        # ✅ FIX: await async call
+        services = await get_services(message.text)
+
+        if not services:
+            await message.answer("❌ Failed to load services.")
+            return
+
         service_list = list(services.keys())[:5]
 
         await message.answer(
@@ -60,11 +75,14 @@ async def handle_steps(message: types.Message):
         )
         return
 
-    # STEP 2: service
+    # =========================
+    # STEP 2: SELECT SERVICE + BUY
+    # =========================
     if "service" not in state:
         state["service"] = message.text
 
-        res = buy_number(
+        # ✅ FIX: await async call
+        res = await buy_number(
             state["country"],
             state["service"],
             user_id
@@ -80,15 +98,22 @@ async def handle_steps(message: types.Message):
         await message.answer(f"📞 Number: {number}\n⏳ Waiting for OTP...")
 
         # =========================
-        # 📩 OTP POLLING
+        # 📩 OTP POLLING (TEMP SOLUTION)
         # =========================
         for _ in range(30):
             await asyncio.sleep(5)
 
-            otp = check_otp(request_id)
+            # ✅ FIX: await async call
+            otp = await check_otp(request_id)
 
             if otp.get("status") == "received":
                 await message.answer(f"✅ OTP: {otp['otp']}")
+
+                # cleanup state after success
+                user_state.pop(user_id, None)
                 return
 
         await message.answer("⌛ Timeout. Try again.")
+
+        # cleanup state on timeout
+        user_state.pop(user_id, None)
