@@ -2,11 +2,17 @@ from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import CallbackContext
 
 from app.bot.keyboards import (
-    main_menu, countries, services, 
-    payment_menu, crypto_menu, paystack_menu
+    main_menu,
+    countries,
+    services,
+    payment_menu,
+    crypto_menu,
+    paystack_menu,
+    paystack_amount_menu
 )
+
 from app.services.sms_service import SMSService
-from app.services.paystack_service import paystack   # Paystack service
+from app.services.paystack_service import paystack
 
 sms = SMSService()
 
@@ -16,6 +22,7 @@ sms = SMSService()
 # =========================
 def start(update: Update, context: CallbackContext):
     context.user_data.clear()
+
     update.message.reply_text(
         "👋 Welcome to DeuceVerify\n\n"
         "🚀 Instant SMS verification gateway\n"
@@ -37,7 +44,8 @@ def buttons(update: Update, context: CallbackContext):
     data = q.data
     user_id = q.from_user.id
 
-    print(f"🔥 CLICKED: {data}")  # DEBUG LOG
+    print(f"🔥 CLICKED: {data}")
+
 
     # ========================
     # 💰 ADD BALANCE FLOW
@@ -56,36 +64,98 @@ def buttons(update: Update, context: CallbackContext):
             parse_mode='Markdown'
         )
 
+    elif data.startswith("crypto_"):
+        coin = data.split("_")[1]
+        q.edit_message_text(
+            f"🔄 Generating {coin.upper()} deposit address...\n\nPlease wait."
+        )
+
+    # ========================
+    # 🇳🇬 PAYSTACK FLOW
+    # ========================
     elif data == "paystack":
         q.edit_message_text(
-            "🇳🇬 **Pay with Naira**\n\nClick below to generate Paystack payment link:",
-            reply_markup=paystack_menu(),
+            "🇳🇬 **Pay with Naira via Paystack**\n\nChoose amount:",
+            reply_markup=paystack_amount_menu(),
             parse_mode='Markdown'
         )
 
-    elif data == "paystack_create":
-        handle_paystack_payment(q, user_id)
+    elif data.startswith("paystack_"):
+        try:
+            amount_naira = int(data.split("_")[1])
+            amount_kobo = amount_naira * 100
 
-    elif data.startswith("crypto_"):
-        coin = data.split("_")[1]
-        q.edit_message_text(f"🔄 Generating {coin.upper()} deposit address...\n\nPlease wait.")
+            email = f"user_{user_id}@deuceverify.com"
+
+            result = paystack.initialize_transaction(
+                email=email,
+                amount=amount_kobo,
+                user_id=user_id
+            )
+
+            if result.get("success"):
+                paystack.save_payment_record(result["reference"], user_id)
+
+                keyboard = [[
+                    InlineKeyboardButton(
+                        "💳 Pay Now",
+                        url=result["authorization_url"]
+                    )
+                ]]
+
+                q.edit_message_text(
+                    text=f"✅ **Payment Link Generated**\n\n"
+                         f"Amount: **₦{amount_naira:,}**\n"
+                         f"Reference: `{result['reference']}`\n\n"
+                         f"Click below to complete payment:",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode='Markdown'
+                )
+            else:
+                q.edit_message_text("❌ Failed to generate payment link.")
+
+        except Exception as e:
+            print(f"❌ PAYSTACK ERROR: {e}")
+            q.edit_message_text("❌ Payment error. Try again.")
+
 
     # ========================
     # 🌍 BUY FLOW
     # ========================
     elif data == "buy":
+        q.edit_message_text("⏳ Fetching countries...")
+
+        try:
+            data = sms.get_countries()
+        except Exception as e:
+            print(f"❌ ERROR: {e}")
+            q.edit_message_text("❌ Failed to load countries.")
+            return
+
         q.edit_message_text(
-            "🌍 Select your country",
-            reply_markup=countries()
+            "🌍 Select your country:",
+            reply_markup=countries(data)
         )
 
+
     elif data.startswith("c_"):
-        country_id = int(data.split("_")[1])
+        country_id = data.split("_")[1]
         context.user_data["country"] = country_id
+
+        q.edit_message_text("⏳ Fetching services...")
+
+        try:
+            data = sms.get_services(country_id)
+        except Exception as e:
+            print(f"❌ ERROR: {e}")
+            q.edit_message_text("❌ Failed to load services.")
+            return
+
         q.edit_message_text(
-            "📱 Select service",
-            reply_markup=services(country_id)
+            "📱 Select service:",
+            reply_markup=services(data)
         )
+
 
     elif data.startswith("s_"):
         if "country" not in context.user_data:
@@ -103,72 +173,87 @@ def buttons(update: Update, context: CallbackContext):
         try:
             res = sms.buy_number(country_id, service_id)
         except Exception as e:
-            print(f"❌ ERROR: {e}")
-            q.edit_message_text("❌ System error. Try again later.")
+            print(f"❌ BUY ERROR: {e}")
+            q.edit_message_text("❌ System error. Try again.")
             return
 
         if not res or "error" in res:
-            q.edit_message_text("❌ Failed to buy number. Try again.")
+            q.edit_message_text("❌ Failed to buy number.")
             return
 
         context.user_data["request_id"] = res.get("request_id")
         context.user_data["number"] = res.get("number")
 
         q.edit_message_text(
-            f"📱 Number: {res['number']}\n"
-            f"🆔 ID: {res['request_id']}\n\n"
-            "⏳ Waiting for OTP..."
+            f"📱 Number: `{res['number']}`\n"
+            f"🆔 ID: `{res['request_id']}`\n\n"
+            "⏳ Waiting for OTP...\n\n"
+            "Click below to check SMS",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("🔄 Check SMS", callback_data="check_sms"),
+                    InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")
+                ]
+            ])
         )
 
+
     # ========================
-    # 🏠 HOME BUTTON
+    # 📩 CHECK OTP
     # ========================
-    elif data == "home":
+    elif data == "check_sms":
+        request_id = context.user_data.get("request_id")
+
+        if not request_id:
+            q.edit_message_text("❌ No active request.")
+            return
+
+        try:
+            sms_code = sms.get_sms(request_id)
+        except Exception as e:
+            print(f"❌ SMS ERROR: {e}")
+            q.answer("Error checking SMS", show_alert=True)
+            return
+
+        if not sms_code:
+            q.answer("⏳ No SMS yet...", show_alert=True)
+            return
+
         q.edit_message_text(
-            "🏠 Main Menu",
+            f"✅ OTP Received:\n\n`{sms_code}`",
+            parse_mode='Markdown',
             reply_markup=main_menu()
         )
 
 
-    # =========================
-    # 💰 PAYSTACK AMOUNT SELECTION
-    # =========================
-    elif data == "paystack":
+    # ========================
+    # ❌ CANCEL ORDER
+    # ========================
+    elif data == "cancel_order":
+        request_id = context.user_data.get("request_id")
+
+        if request_id:
+            try:
+                sms.cancel_number(request_id)
+            except Exception as e:
+                print(f"❌ CANCEL ERROR: {e}")
+
+        context.user_data.clear()
+
         q.edit_message_text(
-            "🇳🇬 **Pay with Naira via Paystack**\n\n"
-            "Choose amount to add:",
-            reply_markup=paystack_amount_menu(),
-            parse_mode='Markdown'
+            "❌ Order cancelled.\n💰 Refund processing...",
+            reply_markup=main_menu()
         )
 
-    elif data.startswith("paystack_"):
-        try:
-            amount_naira = int(data.split("_")[1])
-            amount_kobo = amount_naira * 100
-            user_id = q.from_user.id
-            email = f"user_{user_id}@deuceverify.com"  # You can improve this later
 
-            result = paystack.initialize_transaction(
-                email=email,
-                amount=amount_kobo,
-                user_id=user_id
-            )
+    # ========================
+    # 🏠 HOME
+    # ========================
+    elif data == "home":
+        context.user_data.clear()
 
-            if result.get("success"):
-                # Save reference for webhook
-                paystack.save_payment_record(result["reference"], user_id)
-
-                keyboard = [[InlineKeyboardButton("💳 Pay Now", url=result["authorization_url"])]]
-                
-                q.edit_message_text(
-                    text=f"✅ **Payment Link Generated**\n\n"
-                         f"Amount: **₦{amount_naira:,}**\n"
-                         f"Reference: `{result['reference']}`\n\n"
-                         f"Click the button below to complete payment:",
-                    reply_markup=InlineKeyboardMarkup(keyboard),
-                    parse_mode='Markdown'
-                )
-            else:
-                q.edit_message_text("❌ Failed to generate payment link. Try again.")
-        except Exception as e:
-            q.edit_message_text(f"❌ Error: {str(e)}")
+        q.edit_message_text(
+            "🏠 Main Menu",
+            reply_markup=main_menu()
+        )
