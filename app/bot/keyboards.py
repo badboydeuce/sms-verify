@@ -1,5 +1,4 @@
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-from app.services.smsman_api import get_countries, get_services
 
 
 # =========================
@@ -8,7 +7,7 @@ from app.services.smsman_api import get_countries, get_services
 def main_menu():
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("💰 Add Balance", callback_data="add_balance"),   # Changed
+            InlineKeyboardButton("💰 Add Balance", callback_data="add_balance"),
             InlineKeyboardButton("🌍 Buy Number", callback_data="buy")
         ],
         [
@@ -25,7 +24,6 @@ def main_menu():
 # 💰 PAYMENT MENUS
 # =========================
 def payment_menu():
-    """Add Balance → Choose method"""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("₿ Crypto Payment", callback_data="crypto")],
         [InlineKeyboardButton("🇳🇬 Pay with Naira (Paystack)", callback_data="paystack")],
@@ -34,7 +32,6 @@ def payment_menu():
 
 
 def crypto_menu():
-    """Crypto options"""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("USDT (TRC20)", callback_data="crypto_usdt")],
         [InlineKeyboardButton("BTC (Bitcoin)", callback_data="crypto_btc")],
@@ -43,14 +40,26 @@ def crypto_menu():
 
 
 def paystack_menu():
-    """Paystack options"""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("💳 Generate Payment Link", callback_data="paystack_create")],
         [InlineKeyboardButton("🔙 Back", callback_data="add_balance")]
     ])
 
 
-# ⭐ Featured countries
+def paystack_amount_menu():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("₦1,000", callback_data="paystack_1000")],
+        [InlineKeyboardButton("₦2,000", callback_data="paystack_2000")],
+        [InlineKeyboardButton("₦5,000", callback_data="paystack_5000")],
+        [InlineKeyboardButton("₦10,000", callback_data="paystack_10000")],
+        [InlineKeyboardButton("₦20,000", callback_data="paystack_20000")],
+        [InlineKeyboardButton("🔙 Back", callback_data="paystack")]
+    ])
+
+
+# =========================
+# ⭐ FEATURED COUNTRIES
+# =========================
 FEATURED = {
     "1": "🇺🇸 USA",
     "2": "🇬🇧 UK",
@@ -66,22 +75,29 @@ FEATURED = {
 # =========================
 # 🌍 COUNTRIES MENU
 # =========================
-def countries():
-    data = get_countries()
-
+def countries(data: dict):
     keyboard = []
 
-    # ⭐ Featured first
+    # ⭐ Featured countries
     for cid, name in FEATURED.items():
-        keyboard.append([InlineKeyboardButton(name, callback_data=f"c_{cid}")])
+        keyboard.append([
+            InlineKeyboardButton(name, callback_data=f"c_{cid}")
+        ])
 
-    keyboard.append([InlineKeyboardButton("────────────", callback_data="ignore")])
+    keyboard.append([
+        InlineKeyboardButton("────────────", callback_data="ignore")
+    ])
 
-    # 🌍 API countries
+    # 🌍 API countries (limit + avoid duplicates)
     for cid, name in list(data.items())[:30]:
-        keyboard.append([InlineKeyboardButton(f"🌍 {name}", callback_data=f"c_{cid}")])
+        if cid not in FEATURED:
+            keyboard.append([
+                InlineKeyboardButton(f"🌍 {name}", callback_data=f"c_{cid}")
+            ])
 
-    keyboard.append([InlineKeyboardButton("🔙 Back to Menu", callback_data="home")])
+    keyboard.append([
+        InlineKeyboardButton("🔙 Back to Menu", callback_data="home")
+    ])
 
     return InlineKeyboardMarkup(keyboard)
 
@@ -89,25 +105,16 @@ def countries():
 # =========================
 # 📱 SERVICES MENU
 # =========================
-def services(country_id: int):
-    data = get_services(country_id)
-
+def services(data: dict):
     keyboard = []
-    for sid, name in data.items():
-        keyboard.append([InlineKeyboardButton(f"📱 {name}", callback_data=f"s_{sid}")])
 
-    keyboard.append([InlineKeyboardButton("🔙 Back to Countries", callback_data="buy")])
+    for sid, name in data.items():
+        keyboard.append([
+            InlineKeyboardButton(f"📱 {name}", callback_data=f"s_{sid}")
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton("🔙 Back to Countries", callback_data="buy")
+    ])
 
     return InlineKeyboardMarkup(keyboard)
-
-
-def paystack_amount_menu():
-    """Amount selection for Paystack"""
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("₦1,000", callback_data="paystack_1000")],
-        [InlineKeyboardButton("₦2,000", callback_data="paystack_2000")],
-        [InlineKeyboardButton("₦5,000", callback_data="paystack_5000")],
-        [InlineKeyboardButton("₦10,000", callback_data="paystack_10000")],
-        [InlineKeyboardButton("₦20,000", callback_data="paystack_20000")],
-        [InlineKeyboardButton("🔙 Back", callback_data="paystack")]
-    ])
