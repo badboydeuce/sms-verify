@@ -6,6 +6,11 @@ from app.bot.handlers.start import router as start_router
 from app.bot.handlers.buy import router as buy_router
 from app.bot.handlers.wallet import router as wallet_router  # ✅ ADD THIS
 
+from app.bot.handlers.support import router as support_router
+
+dp.include_router(support_router)
+
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 bot = Bot(token=BOT_TOKEN)
