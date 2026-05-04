@@ -11,37 +11,56 @@ class SMSManProvider:
         self.token = settings.SMSMAN_API_KEY
 
     # =========================
-    # 📞 BUY NUMBER
+    # 💰 BALANCE (optional but useful)
     # =========================
-    def get_number(self, country_id: str, service_id: str):
+    def get_balance(self):
+        try:
+            res = requests.get(
+                self.BASE_URL + "get-balance",
+                params={"token": self.token},
+                timeout=10
+            )
+            return res.json()
+        except Exception as e:
+            return {"error": str(e)}
+
+    # =========================
+    # 📞 BUY NUMBER (FIXED)
+    # =========================
+    def get_number(self, country_id: str, application_id: str):
+
         try:
             res = requests.get(
                 self.BASE_URL + "get-number",
                 params={
                     "token": self.token,
                     "country_id": country_id,
-                    "service": service_id
+                    "application_id": application_id
                 },
                 timeout=10
             )
 
             data = res.json()
 
-            if data.get("status") != "success":
-                return {"error": data}
+            # ❌ API error
+            if "success" in data and data.get("success") is False:
+                return {"error": data.get("error_msg")}
 
             return {
                 "request_id": data["request_id"],
-                "number": data["number"]
+                "number": data["number"],
+                "country_id": data["country_id"],
+                "application_id": data["application_id"]
             }
 
         except Exception as e:
             return {"error": str(e)}
 
     # =========================
-    # 📩 GET SMS
+    # 📩 GET SMS (FIXED)
     # =========================
     def get_sms(self, request_id: str):
+
         try:
             res = requests.get(
                 self.BASE_URL + "get-sms",
@@ -54,71 +73,102 @@ class SMSManProvider:
 
             data = res.json()
 
-            if data.get("status") == "wait":
+            # ⏳ still waiting
+            if data.get("error_code") == "wait_sms":
                 return {"status": "pending"}
 
-            if data.get("status") == "success":
+            # ❌ error case
+            if data.get("error_code"):
                 return {
-                    "status": "received",
-                    "otp": data.get("sms_code")
+                    "status": "error",
+                    "error": data.get("error_msg")
                 }
 
-            return {"status": "error"}
+            # ✅ success
+            if "sms_code" in data:
+                return {
+                    "status": "received",
+                    "otp": data["sms_code"]
+                }
+
+            return {"status": "unknown"}
 
         except Exception as e:
             return {"status": "error", "error": str(e)}
 
     # =========================
-    # ❌ CANCEL NUMBER
+    # ❌ SET STATUS (FIXED)
     # =========================
-    def cancel(self, request_id: str):
+    def set_status(self, request_id: str, status: str):
+
         try:
             res = requests.get(
                 self.BASE_URL + "set-status",
                 params={
                     "token": self.token,
                     "request_id": request_id,
-                    "status": "cancel"
+                    "status": status   # ready / close / reject / used
                 },
                 timeout=10
             )
 
-            return res.json().get("status") == "success"
+            data = res.json()
+            return data.get("success", False)
 
         except Exception:
             return False
 
     # =========================
-    # 🌍 COUNTRIES
+    # 🌍 COUNTRIES (FIXED)
     # =========================
     def get_countries(self):
+
         try:
             res = requests.get(
-                self.BASE_URL + "get-countries",
+                self.BASE_URL + "countries",
                 params={"token": self.token},
                 timeout=10
             )
 
             return res.json()
 
-        except Exception:
-            return {}
+        except Exception as e:
+            return {"error": str(e)}
 
     # =========================
-    # 📱 SERVICES
+    # 📱 SERVICES / APPS (FIXED)
     # =========================
-    def get_services(self, country_id: str):
+    def get_services(self):
+
         try:
             res = requests.get(
-                self.BASE_URL + "get-services",
-                params={
-                    "token": self.token,
-                    "country_id": country_id
-                },
+                self.BASE_URL + "applications",
+                params={"token": self.token},
                 timeout=10
             )
 
             return res.json()
 
-        except Exception:
-            return {}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # =========================
+    # 💲 PRICES (useful for UI)
+    # =========================
+    def get_prices(self, country_id: str = None):
+
+        try:
+            params = {"token": self.token}
+            if country_id:
+                params["country_id"] = country_id
+
+            res = requests.get(
+                self.BASE_URL + "get-prices",
+                params=params,
+                timeout=10
+            )
+
+            return res.json()
+
+        except Exception as e:
+            return {"error": str(e)}
