@@ -2,6 +2,9 @@
 
 import hmac
 import hashlib
+import json
+import hmac
+
 from flask import Blueprint, request, jsonify
 
 from app.core.config import settings
@@ -12,33 +15,56 @@ wallet = WalletService()
 
 
 # =========================
-# 🔐 PAYSTACK WEBHOOK
+# 🔐 PAYSTACK WEBHOOK (FIXED)
 # =========================
 @webhook_bp.route("/paystack", methods=["POST"])
 def paystack_webhook():
 
-    signature = request.headers.get("x-paystack-signature")
     payload = request.data
+    signature = request.headers.get("x-paystack-signature")
 
-    # VERIFY SIGNATURE (CRITICAL SECURITY)
+    # =========================
+    # 🔐 VERIFY SIGNATURE (SECURE)
+    # =========================
     computed = hmac.new(
         settings.PAYSTACK_SECRET_KEY.encode(),
         payload,
         hashlib.sha512
     ).hexdigest()
 
-    if computed != signature:
+    if not hmac.compare_digest(computed, signature or ""):
         return jsonify({"error": "invalid signature"}), 403
 
-    event = request.json
+    # =========================
+    # 📦 SAFE JSON PARSE
+    # =========================
+    try:
+        event = json.loads(payload.decode("utf-8"))
+    except Exception:
+        return jsonify({"error": "invalid payload"}), 400
 
-    if event["event"] == "charge.success":
-        data = event["data"]
+    event_type = event.get("event")
+    data = event.get("data", {})
 
-        user_id = data["metadata"]["telegram_id"]
-        amount = data["amount"] / 100
-        reference = data["reference"]
+    # =========================
+    # 💰 HANDLE SUCCESS PAYMENT
+    # =========================
+    if event_type == "charge.success":
 
+        metadata = data.get("metadata", {})
+        user_id = metadata.get("telegram_id")
+        amount = data.get("amount", 0) / 100
+        reference = data.get("reference")
+
+        if not user_id or not reference:
+            return jsonify({"status": "missing metadata"}), 400
+
+        # =========================
+        # 💳 CREDIT WALLET
+        # =========================
         wallet.add_balance(user_id, amount, reference)
 
+    # =========================
+    # ⚠️ IGNORE OTHER EVENTS SAFELY
+    # =========================
     return jsonify({"status": "ok"})
