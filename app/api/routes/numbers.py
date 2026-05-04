@@ -10,7 +10,6 @@ numbers_bp = Blueprint("numbers", __name__)
 sms = SMSManProvider()
 wallet = WalletService()
 
-# 💰 Price per number (profit margin control)
 PRICE_PER_NUMBER = 3500
 
 
@@ -32,15 +31,16 @@ def services():
     if not country_id:
         return jsonify({"error": "country_id required"}), 400
 
-    return jsonify(sms.get_services(country_id))
+    return jsonify(sms.get_services())
 
 
 # =========================
-# 📞 BUY NUMBER (WITH WALLET DEDUCTION)
+# 📞 BUY NUMBER (FIXED)
 # =========================
 @numbers_bp.route("/buy", methods=["POST"])
 def buy_number():
-    data = request.json
+
+    data = request.json or {}
 
     country = data.get("country")
     service = data.get("service")
@@ -48,6 +48,13 @@ def buy_number():
 
     if not country or not service or not user_id:
         return jsonify({"success": False, "error": "Missing parameters"}), 400
+
+    # convert safely
+    try:
+        country = int(country)
+        service = int(service)
+    except ValueError:
+        return jsonify({"success": False, "error": "Invalid country/service ID"}), 400
 
     price = PRICE_PER_NUMBER
 
@@ -63,7 +70,19 @@ def buy_number():
         }), 400
 
     # =========================
-    # ➖ DEDUCT BALANCE
+    # 📞 CALL SMS PROVIDER
+    # =========================
+    result = sms.get_number(country, service)
+
+    # ❌ PROVIDER ERROR (DO NOT CHARGE USER)
+    if isinstance(result, dict) and result.get("error"):
+        return jsonify({
+            "success": False,
+            "error": result["error"]
+        }), 400
+
+    # =========================
+    # ➖ DEDUCT BALANCE (ONLY AFTER SUCCESS)
     # =========================
     deducted = wallet.deduct_balance(user_id, price)
 
@@ -71,23 +90,18 @@ def buy_number():
         return jsonify({
             "success": False,
             "error": "Wallet deduction failed"
-        }), 400
+        }), 500
 
     # =========================
-    # 📞 CALL SMS PROVIDER
+    # ⚠️ SAFETY CHECK
     # =========================
-    result = sms.get_number(country, service)
-
-    # =========================
-    # ❌ FAILURE → REFUND
-    # =========================
-    if not result or result.get("error"):
+    if not result.get("request_id") or not result.get("number"):
         wallet.add_balance(user_id, price)
 
         return jsonify({
             "success": False,
-            "error": "Number purchase failed. Amount refunded."
-        }), 400
+            "error": "Invalid provider response. Refunded."
+        }), 500
 
     # =========================
     # ✅ SUCCESS
