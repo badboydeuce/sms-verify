@@ -1,35 +1,32 @@
-# app/api/routes/wallet.py
-
 from flask import Blueprint, request, jsonify
-from app.services.wallet import WalletService
+from app.services.paystack import PaystackService
+from app.services.payment_store import PaymentStore
 
 wallet_bp = Blueprint("wallet", __name__)
 
-wallet = WalletService()
+paystack = PaystackService()
+payments = PaymentStore()
 
 
-# =========================
-# 💰 GET BALANCE
-# =========================
-@wallet_bp.route("/balance/<user_id>", methods=["GET"])
-def balance(user_id):
-    return jsonify({
-        "user_id": user_id,
-        "balance": wallet.get_balance(user_id)
-    })
-
-
-# =========================
-# ➕ ADD BALANCE (manual test)
-# =========================
-@wallet_bp.route("/credit", methods=["POST"])
-def credit():
+@wallet_bp.route("/fund", methods=["POST"])
+def fund_wallet():
     data = request.json
 
-    success = wallet.add_balance(
-        user_id=data["user_id"],
-        amount=data["amount"],
-        reference=data.get("reference")
-    )
+    user_id = data.get("user_id")
+    amount = float(data.get("amount"))
+    email = data.get("email")
 
-    return jsonify({"success": success})
+    res = paystack.initialize(email, amount, user_id)
+
+    if not res.get("status"):
+        return jsonify({"success": False}), 400
+
+    reference = res["data"]["reference"]
+
+    # store payment
+    payments.save(reference, user_id, amount)
+
+    return jsonify({
+        "success": True,
+        "authorization_url": res["data"]["authorization_url"]
+    })
