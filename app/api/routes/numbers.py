@@ -1,7 +1,13 @@
 # app/api/routes/numbers.py
 
+PRICE_PER_NUMBER = 3500  # ₦150 (you can change)
+
 from flask import Blueprint, request, jsonify
 from app.services.smsman import SMSManProvider
+
+from app.services.wallet import WalletService
+
+wallet = WalletService()
 
 numbers_bp = Blueprint("numbers", __name__)
 
