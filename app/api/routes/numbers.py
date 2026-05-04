@@ -1,17 +1,17 @@
 # app/api/routes/numbers.py
 
-PRICE_PER_NUMBER = 3500  # ₦150 (you can change)
-
 from flask import Blueprint, request, jsonify
+
 from app.services.smsman import SMSManProvider
-
 from app.services.wallet import WalletService
-
-wallet = WalletService()
 
 numbers_bp = Blueprint("numbers", __name__)
 
 sms = SMSManProvider()
+wallet = WalletService()
+
+# 💰 Price per number (profit margin control)
+PRICE_PER_NUMBER = 3500
 
 
 # =========================
@@ -28,11 +28,15 @@ def countries():
 @numbers_bp.route("/services", methods=["GET"])
 def services():
     country_id = request.args.get("country_id")
+
+    if not country_id:
+        return jsonify({"error": "country_id required"}), 400
+
     return jsonify(sms.get_services(country_id))
 
 
 # =========================
-# 📞 BUY NUMBER
+# 📞 BUY NUMBER (WITH WALLET DEDUCTION)
 # =========================
 @numbers_bp.route("/buy", methods=["POST"])
 def buy_number():
@@ -41,6 +45,9 @@ def buy_number():
     country = data.get("country")
     service = data.get("service")
     user_id = str(data.get("user_id"))
+
+    if not country or not service or not user_id:
+        return jsonify({"success": False, "error": "Missing parameters"}), 400
 
     price = PRICE_PER_NUMBER
 
@@ -58,28 +65,28 @@ def buy_number():
     # =========================
     # ➖ DEDUCT BALANCE
     # =========================
-    deducted = wallet.debit(user_id, price)
+    deducted = wallet.deduct_balance(user_id, price)
 
     if not deducted:
         return jsonify({
             "success": False,
-            "error": "Failed to deduct balance"
+            "error": "Wallet deduction failed"
         }), 400
 
     # =========================
-    # 📞 BUY FROM SMS-MAN
+    # 📞 CALL SMS PROVIDER
     # =========================
     result = sms.get_number(country, service)
 
     # =========================
-    # ❌ IF FAILED → REFUND
+    # ❌ FAILURE → REFUND
     # =========================
     if not result or result.get("error"):
-        wallet.credit(user_id, price)
+        wallet.add_balance(user_id, price)
 
         return jsonify({
             "success": False,
-            "error": "Number purchase failed. Refunded."
+            "error": "Number purchase failed. Amount refunded."
         }), 400
 
     # =========================
