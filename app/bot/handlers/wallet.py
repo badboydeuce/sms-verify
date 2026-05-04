@@ -1,4 +1,4 @@
-from aiogram import Router, types
+from aiogram import Router, types, F
 
 from app.bot.bridge import get_balance, init_payment
 from app.utils.helpers import format_naira
@@ -29,7 +29,7 @@ async def my_profile(message: types.Message):
 # =========================
 # ➕ START FUNDING
 # =========================
-@router.message(lambda msg: msg.text == "➕ Fund Wallet")
+@router.message(F.text == "➕ Fund Wallet")
 async def fund_wallet(message: types.Message):
 
     funding_users.add(message.from_user.id)
@@ -73,6 +73,7 @@ async def handle_amount(message: types.Message):
 
     if not res.get("success"):
         await message.answer("❌ Payment initialization failed")
+        funding_users.discard(user_id)
         return
 
     link = res["authorization_url"]
@@ -81,5 +82,5 @@ async def handle_amount(message: types.Message):
         f"💳 Click below to complete payment:\n\n{link}"
     )
 
-    # exit funding mode
-    funding_users.remove(user_id)
+    # exit funding mode safely
+    funding_users.discard(user_id)
