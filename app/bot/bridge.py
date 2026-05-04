@@ -44,3 +44,16 @@ async def get_balance(user_id):
     async with httpx.AsyncClient() as client:
         res = await client.get(f"{API_BASE}/wallet/balance/{user_id}")
         return res.json()
+
+
+async def init_payment(user_id, amount, email):
+    async with httpx.AsyncClient() as client:
+        res = await client.post(
+            f"{API_BASE}/wallet/fund",
+            json={
+                "user_id": user_id,
+                "amount": amount,
+                "email": email
+            }
+        )
+        return res.json()
