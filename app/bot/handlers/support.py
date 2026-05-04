@@ -10,6 +10,6 @@ async def contact_support(message: types.Message):
         "📞 *Support*\n\n"
         "Need help?\n"
         "Contact us here:\n\n"
-        "👉 https://t.me/your_support_username",
+        "👉 https://t.me/DEUCE_VERIFY_ADMIN",
         parse_mode="Markdown"
     )
