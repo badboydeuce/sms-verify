@@ -10,16 +10,19 @@ funding_users = set()
 
 
 # =========================
-# 💰 CHECK BALANCE
+# 💰 PROFILE CHECK
 # =========================
-@router.message(lambda msg: msg.text == "💰 Balance")
-async def check_balance(message: types.Message):
+@router.message(F.text == "👤 My Profile")
+async def my_profile(message: types.Message):
 
     data = await get_balance(message.from_user.id)
     balance = data.get("balance", 0)
 
     await message.answer(
-        f"💰 Your Balance:\n\n{format_naira(balance)}"
+        f"👤 *My Profile*\n\n"
+        f"🆔 ID: `{message.from_user.id}`\n"
+        f"💰 Balance: {format_naira(balance)}",
+        parse_mode="Markdown"
     )
 
 
