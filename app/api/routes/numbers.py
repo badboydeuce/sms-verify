@@ -40,16 +40,53 @@ def buy_number():
 
     country = data.get("country")
     service = data.get("service")
-    user_id = data.get("user_id")
+    user_id = str(data.get("user_id"))
 
+    price = PRICE_PER_NUMBER
+
+    # =========================
+    # 💰 CHECK BALANCE
+    # =========================
+    balance = wallet.get_balance(user_id)
+
+    if balance < price:
+        return jsonify({
+            "success": False,
+            "error": "Insufficient balance"
+        }), 400
+
+    # =========================
+    # ➖ DEDUCT BALANCE
+    # =========================
+    deducted = wallet.debit(user_id, price)
+
+    if not deducted:
+        return jsonify({
+            "success": False,
+            "error": "Failed to deduct balance"
+        }), 400
+
+    # =========================
+    # 📞 BUY FROM SMS-MAN
+    # =========================
     result = sms.get_number(country, service)
 
-    if "error" in result:
-        return jsonify(result), 400
+    # =========================
+    # ❌ IF FAILED → REFUND
+    # =========================
+    if not result or result.get("error"):
+        wallet.credit(user_id, price)
 
+        return jsonify({
+            "success": False,
+            "error": "Number purchase failed. Refunded."
+        }), 400
+
+    # =========================
+    # ✅ SUCCESS
+    # =========================
     return jsonify({
         "success": True,
-        "user_id": user_id,
         "request_id": result["request_id"],
         "number": result["number"]
     })
