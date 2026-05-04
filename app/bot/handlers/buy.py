@@ -13,7 +13,6 @@ from app.bot.bridge import (
 from app.bot.keyboards.buy import countries_kb, services_kb
 
 router = Router()
-
 user_state = {}
 
 
@@ -23,10 +22,8 @@ user_state = {}
 @router.message(lambda msg: msg.text == "🛒 Buy Number")
 async def start_buy(message: types.Message):
 
-    # ✅ FIX: await async call
     data = await get_countries()
 
-    # handle empty response safely
     if not data:
         await message.answer("❌ Failed to load countries. Try again.")
         return
@@ -60,7 +57,6 @@ async def handle_steps(message: types.Message):
     if "country" not in state:
         state["country"] = message.text
 
-        # ✅ FIX: await async call
         services = await get_services(message.text)
 
         if not services:
@@ -81,16 +77,19 @@ async def handle_steps(message: types.Message):
     if "service" not in state:
         state["service"] = message.text
 
-        # ✅ FIX: await async call
         res = await buy_number(
             state["country"],
             state["service"],
             user_id
         )
 
+        # ✅ FIXED INDENTATION
         if not res.get("success"):
-        await message.answer(f"❌ {res.get('error', 'Failed to buy number')}")
-           return
+            await message.answer(
+                f"❌ {res.get('error', 'Failed to buy number')}"
+            )
+            user_state.pop(user_id, None)
+            return
 
         request_id = res["request_id"]
         number = res["number"]
@@ -98,22 +97,18 @@ async def handle_steps(message: types.Message):
         await message.answer(f"📞 Number: {number}\n⏳ Waiting for OTP...")
 
         # =========================
-        # 📩 OTP POLLING (TEMP SOLUTION)
+        # 📩 OTP POLLING
         # =========================
         for _ in range(30):
             await asyncio.sleep(5)
 
-            # ✅ FIX: await async call
             otp = await check_otp(request_id)
 
             if otp.get("status") == "received":
                 await message.answer(f"✅ OTP: {otp['otp']}")
 
-                # cleanup state after success
                 user_state.pop(user_id, None)
                 return
 
         await message.answer("⌛ Timeout. Try again.")
-
-        # cleanup state on timeout
         user_state.pop(user_id, None)
