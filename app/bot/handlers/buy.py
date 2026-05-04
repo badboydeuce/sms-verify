@@ -89,8 +89,8 @@ async def handle_steps(message: types.Message):
         )
 
         if not res.get("success"):
-            await message.answer("❌ Failed to buy number")
-            return
+        await message.answer(f"❌ {res.get('error', 'Failed to buy number')}")
+           return
 
         request_id = res["request_id"]
         number = res["number"]
