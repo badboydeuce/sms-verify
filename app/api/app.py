@@ -1,15 +1,10 @@
-# app/api/app.py
-
 from flask import Flask
+
 from app.api.routes.numbers import numbers_bp
 from app.api.routes.wallet import wallet_bp
 from app.api.routes.otp import otp_bp
 from app.api.routes.webhook import webhook_bp
 from app.core.database import init_db
-
-from app.api.routes.wallet import wallet_bp
-
-app.register_blueprint(wallet_bp, url_prefix="/wallet")
 
 
 def create_app():
