@@ -1,7 +1,9 @@
 import asyncio
 import os
+import logging
 
 from aiogram import Bot, Dispatcher
+from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from app.bot.handlers.start import router as start_router
@@ -14,22 +16,23 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 
 async def main():
+    if not BOT_TOKEN:
+        raise ValueError("BOT_TOKEN is not set")
 
-    bot = Bot(token=BOT_TOKEN)
+    logging.basicConfig(level=logging.INFO)
 
-    # IMPORTANT: dp must be created HERE
+    bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
+
     dp = Dispatcher(storage=MemoryStorage())
 
-    # =========================
-    # REGISTER ROUTERS HERE
-    # =========================
+    # REGISTER ROUTERS
     dp.include_router(start_router)
     dp.include_router(buy_router)
     dp.include_router(wallet_router)
     dp.include_router(support_router)
     dp.include_router(profile_router)
 
-    print("🚀 Bot is running...")
+    logging.info("🚀 Bot is running...")
 
     await dp.start_polling(bot)
 
