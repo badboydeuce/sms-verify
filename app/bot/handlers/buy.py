@@ -1,25 +1,19 @@
 import asyncio
 from aiogram import Router, types, F
+from aiogram.fsm.context import FSMContext
 
-from app.bot.bridge import (
-    get_countries,
-    get_services,
-    buy_number,
-    check_otp
-)
-
+from app.bot.states.buy import BuyFlow
+from app.bot.bridge import get_countries, get_services, buy_number, check_otp
 from app.bot.keyboards.buy import countries_kb, services_kb
 
 router = Router()
 
-user_state = {}
-
 
 # =========================
-# 🛒 ENTRY POINT
+# 🛒 START FLOW
 # =========================
 @router.message(F.text == "🛒 Buy Number")
-async def start_buy(message: types.Message):
+async def start_buy(message: types.Message, state: FSMContext):
 
     countries = await get_countries()
 
@@ -27,7 +21,7 @@ async def start_buy(message: types.Message):
         await message.answer("❌ Failed to load countries.")
         return
 
-    user_state[message.from_user.id] = {}
+    await state.set_state(BuyFlow.country)
 
     await message.answer(
         "🌍 Select country:",
@@ -36,74 +30,64 @@ async def start_buy(message: types.Message):
 
 
 # =========================
-# 🌍 FLOW HANDLER (ONLY ONE)
+# 🌍 COUNTRY STEP
 # =========================
-@router.message()
-async def handle_flow(message: types.Message):
+@router.message(BuyFlow.country)
+async def select_country(message: types.Message, state: FSMContext):
 
-    user_id = message.from_user.id
+    await state.update_data(country=message.text)
 
-    if user_id not in user_state:
+    services = await get_services()
+
+    if not services:
+        await message.answer("❌ Failed to load services.")
         return
 
-    state = user_state[user_id]
+    await state.set_state(BuyFlow.service)
 
-    # =====================
-    # STEP 1: COUNTRY
-    # =====================
-    if "country" not in state:
+    await message.answer(
+        "📱 Select service:",
+        reply_markup=services_kb(services)
+    )
 
-        state["country"] = message.text
 
-        services = await get_services()
+# =========================
+# 📱 SERVICE STEP → BUY NUMBER
+# =========================
+@router.message(BuyFlow.service)
+async def select_service(message: types.Message, state: FSMContext):
 
-        if not services:
-            await message.answer("❌ Failed to load services.")
-            return
+    data = await state.get_data()
 
-        await message.answer(
-            "📱 Select service:",
-            reply_markup=services_kb(services)
-        )
+    country = data["country"]
+    service = message.text
+
+    res = await buy_number(country, service, message.from_user.id)
+
+    if not res.get("success"):
+        await message.answer(f"❌ {res.get('error')}")
+        await state.clear()
         return
 
-    # =====================
-    # STEP 2: SERVICE
-    # =====================
-    if "service" not in state:
+    request_id = res["request_id"]
 
-        state["service"] = message.text
+    await message.answer(
+        f"📞 Number: {res['number']}\n⏳ Waiting for OTP..."
+    )
 
-        res = await buy_number(
-            state["country"],
-            state["service"],
-            user_id
-        )
+    # =========================
+    # OTP POLLING
+    # =========================
+    for _ in range(30):
 
-        if not res.get("success"):
-            await message.answer(f"❌ {res.get('error')}")
-            user_state.pop(user_id, None)
+        await asyncio.sleep(5)
+
+        otp = await check_otp(request_id)
+
+        if otp.get("status") == "received":
+            await message.answer(f"✅ OTP: {otp['otp']}")
+            await state.clear()
             return
 
-        request_id = res["request_id"]
-
-        await message.answer(
-            f"📞 Number: {res['number']}\n⏳ Waiting for OTP..."
-        )
-
-        # =====================
-        # OTP LOOP
-        # =====================
-        for _ in range(30):
-
-            await asyncio.sleep(5)
-
-            otp = await check_otp(request_id)
-
-            if otp.get("status") == "received":
-                await message.answer(f"✅ OTP: {otp['otp']}")
-                user_state.pop(user_id, None)
-                return
-
-        await message.answer("⌛ Timeout. Try again.")
-        user_state.pop(user_id, None)
+    await message.answer("⌛ Timeout. Try again.")
+    await state.clear()
