@@ -1,5 +1,3 @@
-# app/bot/handlers/buy.py
-
 from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -10,17 +8,11 @@ from app.bot.keyboards.buy import countries_kb, services_kb
 router = Router()
 
 
-# =========================
-# 📦 STATES
-# =========================
 class BuyFlow(StatesGroup):
     country = State()
     service = State()
 
 
-# =========================
-# 🛒 START BUY FLOW
-# =========================
 @router.message(F.text == "🛒 Buy Number")
 async def start_buy(message: types.Message, state: FSMContext):
 
@@ -30,6 +22,7 @@ async def start_buy(message: types.Message, state: FSMContext):
         await message.answer("❌ No countries available at the moment.")
         return
 
+    await state.update_data(countries=countries)
     await state.set_state(BuyFlow.country)
 
     await message.answer(
@@ -38,17 +31,16 @@ async def start_buy(message: types.Message, state: FSMContext):
     )
 
 
-# =========================
-# 🌍 COUNTRY SELECTION
-# =========================
 @router.message(BuyFlow.country)
 async def select_country(message: types.Message, state: FSMContext):
 
-    countries = await get_countries()
-    valid_countries = [c["title"] for c in countries]
+    data = await state.get_data()
+    countries = data.get("countries") or await get_countries()
+
+    valid_countries = [c.get("title", "") for c in countries]
 
     if message.text not in valid_countries:
-        await message.answer("❌ Please select a valid country from the menu.")
+        await message.answer("❌ Please select a valid country.")
         return
 
     await state.update_data(country=message.text)
@@ -56,7 +48,7 @@ async def select_country(message: types.Message, state: FSMContext):
     services = await get_services(message.text)
 
     if not services:
-        await message.answer("❌ No services available for this country.")
+        await message.answer("❌ No services available.")
         await state.clear()
         return
 
@@ -68,9 +60,6 @@ async def select_country(message: types.Message, state: FSMContext):
     )
 
 
-# =========================
-# 📱 SERVICE SELECTION + BUY
-# =========================
 @router.message(BuyFlow.service)
 async def select_service(message: types.Message, state: FSMContext):
 
@@ -78,10 +67,10 @@ async def select_service(message: types.Message, state: FSMContext):
     country = data.get("country")
 
     services = await get_services(country)
-    valid_services = [s["name"] for s in services]
+    valid_services = [s.get("name", "") for s in services]
 
     if message.text not in valid_services:
-        await message.answer("❌ Please select a valid service from the menu.")
+        await message.answer("❌ Please select a valid service.")
         return
 
     result = await buy_number(
@@ -92,8 +81,8 @@ async def select_service(message: types.Message, state: FSMContext):
 
     await state.clear()
 
-    if not result or not result.get("success"):
-        await message.answer("❌ Purchase failed. Please try again.")
+    if not result or not (result.get("success") or result.get("status")):
+        await message.answer("❌ Purchase failed.")
         return
 
     await message.answer(
@@ -105,11 +94,8 @@ async def select_service(message: types.Message, state: FSMContext):
     )
 
 
-# =========================
-# 🛡 SAFE FALLBACK (FIXED)
-# =========================
-@router.message(~F.state)   # IMPORTANT FIX
+@router.message()
 async def fallback(message: types.Message):
     await message.answer(
-        "⚠️ Please use the menu buttons to navigate the system."
+        "⚠️ Please use the menu buttons."
     )
