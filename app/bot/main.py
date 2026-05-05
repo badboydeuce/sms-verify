@@ -8,6 +8,9 @@ from app.bot.handlers.start import router as start_router
 from app.bot.handlers.buy import router as buy_router
 from app.bot.handlers.wallet import router as wallet_router
 from app.bot.handlers.support import router as support_router
+from app.bot.handlers.profile import router as profile_router
+
+dp.include_router(profile_router)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
