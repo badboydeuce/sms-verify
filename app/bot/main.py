@@ -2,6 +2,7 @@ import asyncio
 import os
 
 from aiogram import Bot, Dispatcher
+from aiogram.fsm.storage.memory import MemoryStorage
 
 from app.bot.handlers.start import router as start_router
 from app.bot.handlers.buy import router as buy_router
@@ -12,14 +13,21 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 
 async def main():
-    bot = Bot(token=BOT_TOKEN)
-    dp = Dispatcher()
 
-    # register routers INSIDE function (IMPORTANT)
+    bot = Bot(token=BOT_TOKEN)
+
+    # =========================
+    # FSM STORAGE (CRITICAL FIX)
+    # =========================
+    dp = Dispatcher(storage=MemoryStorage())
+
+    # register routers
     dp.include_router(start_router)
     dp.include_router(buy_router)
     dp.include_router(wallet_router)
     dp.include_router(support_router)
+
+    print("🚀 Bot is running...")
 
     await dp.start_polling(bot)
 
