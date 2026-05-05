@@ -6,6 +6,8 @@ from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
+from app.core.database import init_db  # ✅ ADD THIS
+
 from app.bot.handlers.start import router as start_router
 from app.bot.handlers.buy import router as buy_router
 from app.bot.handlers.wallet import router as wallet_router
@@ -20,6 +22,9 @@ async def main():
         raise ValueError("BOT_TOKEN is not set")
 
     logging.basicConfig(level=logging.INFO)
+
+    # ✅ INIT DATABASE FIRST
+    init_db()
 
     bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
 
