@@ -1,60 +1,29 @@
-# =========================
-# USER HELPERS
-# =========================
+import os
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from app.core.config import settings
 
-def get_user(user_id: str):
-    conn = get_connection()
-    cur = conn.cursor()
 
-    cur.execute(
-        "SELECT * FROM users WHERE user_id = %s;",
-        (str(user_id),)
+# =========================
+# CONNECTION (MUST BE FIRST)
+# =========================
+def get_connection():
+    if not settings.DATABASE_URL:
+        raise Exception("DATABASE_URL is not set")
+
+    return psycopg2.connect(
+        settings.DATABASE_URL,
+        cursor_factory=RealDictCursor
     )
 
-    user = cur.fetchone()
-
-    conn.close()
-    return user
-
-
-def create_user(user_id: str):
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute(
-        """
-        INSERT INTO users (user_id, balance)
-        VALUES (%s, 0)
-        ON CONFLICT (user_id) DO NOTHING
-        RETURNING *;
-        """,
-        (str(user_id),)
-    )
-
-    user = cur.fetchone()
-
-    # If user already existed, fetch it
-    if not user:
-        cur.execute(
-            "SELECT * FROM users WHERE user_id = %s;",
-            (str(user_id),)
-        )
-        user = cur.fetchone()
-
-    conn.commit()
-    conn.close()
-
-    return user
 
 # =========================
-# 🛠 INIT DATABASE
+# INIT DB
 # =========================
-
 def init_db():
     conn = get_connection()
     cur = conn.cursor()
 
-    # USERS TABLE
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id TEXT PRIMARY KEY,
@@ -62,7 +31,6 @@ def init_db():
         );
     """)
 
-    # TRANSACTIONS TABLE
     cur.execute("""
         CREATE TABLE IF NOT EXISTS transactions (
             id SERIAL PRIMARY KEY,
@@ -75,7 +43,6 @@ def init_db():
         );
     """)
 
-    # ACTIVATIONS TABLE
     cur.execute("""
         CREATE TABLE IF NOT EXISTS activations (
             id SERIAL PRIMARY KEY,
