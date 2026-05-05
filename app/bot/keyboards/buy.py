@@ -106,9 +106,9 @@ async def select_service(message: types.Message, state: FSMContext):
 
 
 # =========================
-# 🛡 GLOBAL FALLBACK (IMPORTANT)
+# 🛡 SAFE FALLBACK (FIXED)
 # =========================
-@router.message()
+@router.message(~F.state)   # IMPORTANT FIX
 async def fallback(message: types.Message):
     await message.answer(
         "⚠️ Please use the menu buttons to navigate the system."
