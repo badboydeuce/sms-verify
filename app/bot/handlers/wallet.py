@@ -1,6 +1,6 @@
 from aiogram import Router, types, F
 
-from app.bot.bridge import get_balance, init_payment
+from app.bot.bridge import init_payment
 from app.utils.helpers import format_naira
 
 router = Router()
@@ -10,29 +10,13 @@ funding_users = set()
 
 
 # =========================
-# 💰 PROFILE CHECK
-# =========================
-@router.message(F.text == "👤 My Profile")
-async def my_profile(message: types.Message):
-
-    data = await get_balance(message.from_user.id)
-    balance = data.get("balance", 0)
-
-    await message.answer(
-        f"👤 *My Profile*\n\n"
-        f"🆔 ID: `{message.from_user.id}`\n"
-        f"💰 Balance: {format_naira(balance)}",
-        parse_mode="Markdown"
-    )
-
-
-# =========================
 # ➕ START FUNDING
 # =========================
 @router.message(F.text == "➕ Fund Wallet")
 async def fund_wallet(message: types.Message):
 
-    funding_users.add(message.from_user.id)
+    user_id = message.from_user.id
+    funding_users.add(user_id)
 
     await message.answer(
         "💳 Enter amount to fund:\n\n"
@@ -42,23 +26,25 @@ async def fund_wallet(message: types.Message):
 
 
 # =========================
-# 💳 HANDLE AMOUNT INPUT
+# 💳 HANDLE AMOUNT INPUT (SAFE)
 # =========================
-@router.message()
+@router.message(F.text)
 async def handle_amount(message: types.Message):
 
     user_id = message.from_user.id
 
-    # only handle if user is in funding mode
+    # only process if user is in funding mode
     if user_id not in funding_users:
         return
 
-    # validate input
-    if not message.text.isdigit():
+    text = message.text.strip()
+
+    # validate number
+    if not text.isdigit():
         await message.answer("❌ Please enter a valid number")
         return
 
-    amount = int(message.text)
+    amount = int(text)
 
     if amount < 500:
         await message.answer("❌ Minimum funding is ₦500")
@@ -82,5 +68,5 @@ async def handle_amount(message: types.Message):
         f"💳 Click below to complete payment:\n\n{link}"
     )
 
-    # exit funding mode safely
+    # exit funding mode
     funding_users.discard(user_id)
