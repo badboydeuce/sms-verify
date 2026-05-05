@@ -101,3 +101,39 @@ def create_user(user_id: str):
     conn.close()
 
     return user
+
+
+# =========================
+# 👤 GET USER
+# =========================
+def get_user(user_id: str):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT * FROM users WHERE user_id = %s", (user_id,))
+    user = cur.fetchone()
+
+    conn.close()
+    return user
+
+
+# =========================
+# 🆕 CREATE USER
+# =========================
+def create_user(user_id: str):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        INSERT INTO users (user_id, balance)
+        VALUES (%s, 0)
+        ON CONFLICT (user_id) DO NOTHING
+        """,
+        (user_id,)
+    )
+
+    conn.commit()
+    conn.close()
+
+    return get_user(user_id)
