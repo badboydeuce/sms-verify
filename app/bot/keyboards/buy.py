@@ -1,4 +1,4 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 
 # =========================
@@ -6,17 +6,13 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 # =========================
 def countries_kb(countries: list):
 
-    keyboard = []
-
-    for c in countries:
-        keyboard.append([
-            InlineKeyboardButton(
-                text=f"🌍 {c['title']}",
-                callback_data=f"country:{c['id']}"
-            )
-        ])
-
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=c["title"])]
+            for c in countries
+        ],
+        resize_keyboard=True
+    )
 
 
 # =========================
@@ -24,29 +20,10 @@ def countries_kb(countries: list):
 # =========================
 def services_kb(services: list):
 
-    keyboard = []
-
-    for s in services:
-        keyboard.append([
-            InlineKeyboardButton(
-                text=f"📱 {s['name']}",
-                callback_data=f"service:{s['id']}"
-            )
-        ])
-
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
-
-
-# =========================
-# 🛒 CONFIRM PURCHASE
-# =========================
-def confirm_kb():
-
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="✅ Buy Number", callback_data="buy:confirm")
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=s["name"])]
+            for s in services
         ],
-        [
-            InlineKeyboardButton(text="❌ Cancel", callback_data="buy:cancel")
-        ]
-    ])
+        resize_keyboard=True
+    )
