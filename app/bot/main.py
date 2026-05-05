@@ -10,8 +10,6 @@ from app.bot.handlers.wallet import router as wallet_router
 from app.bot.handlers.support import router as support_router
 from app.bot.handlers.profile import router as profile_router
 
-dp.include_router(profile_router)
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 
@@ -19,16 +17,17 @@ async def main():
 
     bot = Bot(token=BOT_TOKEN)
 
-    # =========================
-    # FSM STORAGE (CRITICAL FIX)
-    # =========================
+    # IMPORTANT: dp must be created HERE
     dp = Dispatcher(storage=MemoryStorage())
 
-    # register routers
+    # =========================
+    # REGISTER ROUTERS HERE
+    # =========================
     dp.include_router(start_router)
     dp.include_router(buy_router)
     dp.include_router(wallet_router)
     dp.include_router(support_router)
+    dp.include_router(profile_router)
 
     print("🚀 Bot is running...")
 
