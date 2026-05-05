@@ -16,18 +16,15 @@ user_state = {}
 
 
 # =========================
-# 🛒 START BUY FLOW
+# 🛒 ENTRY POINT
 # =========================
-@router.message(F.text)
+@router.message(F.text == "🛒 Buy Number")
 async def start_buy(message: types.Message):
-
-    if not message.text or "Buy Number" not in message.text:
-        return
 
     countries = await get_countries()
 
     if not countries:
-        await message.answer("❌ Failed to load countries. Try again.")
+        await message.answer("❌ Failed to load countries.")
         return
 
     user_state[message.from_user.id] = {}
@@ -39,10 +36,10 @@ async def start_buy(message: types.Message):
 
 
 # =========================
-# 🌍 STEP 1: COUNTRY SELECTED
+# 🌍 FLOW HANDLER (ONLY ONE)
 # =========================
-@router.message(F.text)
-async def handle_country(message: types.Message):
+@router.message()
+async def handle_flow(message: types.Message):
 
     user_id = message.from_user.id
 
@@ -51,6 +48,9 @@ async def handle_country(message: types.Message):
 
     state = user_state[user_id]
 
+    # =====================
+    # STEP 1: COUNTRY
+    # =====================
     if "country" not in state:
 
         state["country"] = message.text
@@ -67,21 +67,10 @@ async def handle_country(message: types.Message):
         )
         return
 
-
-# =========================
-# 📱 STEP 2: SERVICE SELECTED → BUY
-# =========================
-@router.message(F.text)
-async def handle_service(message: types.Message):
-
-    user_id = message.from_user.id
-
-    if user_id not in user_state:
-        return
-
-    state = user_state[user_id]
-
-    if "country" in state and "service" not in state:
+    # =====================
+    # STEP 2: SERVICE
+    # =====================
+    if "service" not in state:
 
         state["service"] = message.text
 
@@ -92,22 +81,19 @@ async def handle_service(message: types.Message):
         )
 
         if not res.get("success"):
-            await message.answer(
-                f"❌ {res.get('error', 'Failed to buy number')}"
-            )
+            await message.answer(f"❌ {res.get('error')}")
             user_state.pop(user_id, None)
             return
 
         request_id = res["request_id"]
-        number = res["number"]
 
         await message.answer(
-            f"📞 Number: {number}\n⏳ Waiting for OTP..."
+            f"📞 Number: {res['number']}\n⏳ Waiting for OTP..."
         )
 
-        # =========================
-        # 📩 OTP POLLING
-        # =========================
+        # =====================
+        # OTP LOOP
+        # =====================
         for _ in range(30):
 
             await asyncio.sleep(5)
@@ -115,9 +101,7 @@ async def handle_service(message: types.Message):
             otp = await check_otp(request_id)
 
             if otp.get("status") == "received":
-
                 await message.answer(f"✅ OTP: {otp['otp']}")
-
                 user_state.pop(user_id, None)
                 return
 
