@@ -1,70 +1,117 @@
-# app/api/routes/webhook.py
-
+import os
 import hmac
 import hashlib
-import json
-import hmac
-
 from flask import Blueprint, request, jsonify
 
-from app.core.config import settings
-from app.services.wallet import WalletService
+from app.core.database import get_connection, create_user
 
 webhook_bp = Blueprint("webhook", __name__)
-wallet = WalletService()
+
+PAYSTACK_SECRET = os.getenv("PAYSTACK_SECRET_KEY")
 
 
 # =========================
-# 🔐 PAYSTACK WEBHOOK (FIXED)
+# 🔐 VERIFY PAYSTACK SIGNATURE
 # =========================
-@webhook_bp.route("/paystack", methods=["POST"])
-def paystack_webhook():
+def verify_signature(payload: bytes, signature: str) -> bool:
 
-    payload = request.data
-    signature = request.headers.get("x-paystack-signature")
+    if not signature:
+        return False
 
-    # =========================
-    # 🔐 VERIFY SIGNATURE (SECURE)
-    # =========================
-    computed = hmac.new(
-        settings.PAYSTACK_SECRET_KEY.encode(),
+    computed_hash = hmac.new(
+        PAYSTACK_SECRET.encode(),
         payload,
         hashlib.sha512
     ).hexdigest()
 
-    if not hmac.compare_digest(computed, signature or ""):
+    return hmac.compare_digest(computed_hash, signature)
+
+
+# =========================
+# 💳 PAYSTACK WEBHOOK ROUTE
+# =========================
+@webhook_bp.route("/paystack", methods=["POST"])
+def paystack_webhook():
+
+    payload = request.get_data()
+    signature = request.headers.get("x-paystack-signature")
+
+    # 🔐 security check
+    if not verify_signature(payload, signature):
         return jsonify({"error": "invalid signature"}), 403
 
-    # =========================
-    # 📦 SAFE JSON PARSE
-    # =========================
-    try:
-        event = json.loads(payload.decode("utf-8"))
-    except Exception:
+    event = request.json
+
+    # only handle successful payments
+    if event.get("event") != "charge.success":
+        return jsonify({"status": "ignored"}), 200
+
+    data = event["data"]
+
+    reference = data.get("reference")
+    amount = data.get("amount", 0) / 100
+    email = data.get("customer", {}).get("email")
+
+    if not reference or not email:
         return jsonify({"error": "invalid payload"}), 400
 
-    event_type = event.get("event")
-    data = event.get("data", {})
+    # =========================
+    # EXTRACT USER ID FROM EMAIL
+    # (your system format: user123@deuce.com)
+    # =========================
+    try:
+        user_id = email.split("user")[1].split("@")[0]
+    except Exception:
+        return jsonify({"error": "invalid user email format"}), 400
+
+    conn = get_connection()
+    cur = conn.cursor()
 
     # =========================
-    # 💰 HANDLE SUCCESS PAYMENT
+    # PREVENT DOUBLE CREDIT
     # =========================
-    if event_type == "charge.success":
+    cur.execute(
+        "SELECT id FROM transactions WHERE reference = %s",
+        (reference,)
+    )
 
-        metadata = data.get("metadata", {})
-        user_id = metadata.get("telegram_id")
-        amount = data.get("amount", 0) / 100
-        reference = data.get("reference")
-
-        if not user_id or not reference:
-            return jsonify({"status": "missing metadata"}), 400
-
-        # =========================
-        # 💳 CREDIT WALLET
-        # =========================
-        wallet.add_balance(user_id, amount, reference)
+    if cur.fetchone():
+        conn.close()
+        return jsonify({"status": "duplicate"}), 200
 
     # =========================
-    # ⚠️ IGNORE OTHER EVENTS SAFELY
+    # ENSURE USER EXISTS
     # =========================
-    return jsonify({"status": "ok"})
+    create_user(user_id)
+
+    # =========================
+    # CREDIT WALLET
+    # =========================
+    cur.execute(
+        """
+        UPDATE users
+        SET balance = balance + %s
+        WHERE user_id = %s
+        """,
+        (amount, user_id)
+    )
+
+    # =========================
+    # LOG TRANSACTION
+    # =========================
+    cur.execute(
+        """
+        INSERT INTO transactions (user_id, reference, amount, type, status)
+        VALUES (%s, %s, %s, %s, %s)
+        """,
+        (user_id, reference, amount, "credit", "success")
+    )
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        "status": "success",
+        "credited": amount,
+        "user_id": user_id
+    }), 200
