@@ -3,7 +3,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from app.bot.bridge import get_countries, get_services, buy_number
-from app.bot.keyboards.buy import countries_kb, services_kb
 
 router = Router()
 
