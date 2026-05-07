@@ -2,7 +2,7 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from bot.filters.admin import (
+from bot.handlers.filters.admin import (
     AdminFilter
 )
 
