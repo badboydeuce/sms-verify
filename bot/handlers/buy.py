@@ -63,3 +63,49 @@ async def choose_type(
         )
 
     await callback.answer()
+
+@router.callback_query(
+    BuyCallback.filter(
+        F.action == "country"
+    )
+)
+async def choose_country(
+    callback: CallbackQuery,
+    callback_data: BuyCallback
+):
+
+    country_id = callback_data.value
+
+    prices = (
+        await SMSManService.get_prices(
+            country_id
+        )
+    )
+
+    services = []
+
+    for item in prices:
+
+        services.append({
+            "id":
+            item["application_id"],
+
+            "name":
+            item["application"],
+
+            "price":
+            SMSManService.apply_markup(
+                float(item["price"])
+            )
+        })
+
+    await callback.message.edit_text(
+        "📱 Select service",
+        reply_markup=services_keyboard(
+            services,
+            country_id
+        )
+    )
+
+    await callback.answer()
+
