@@ -1,15 +1,15 @@
 #!/bin/bash
 
-echo "Starting Telegram Bot and Flask API..."
+echo "🚀 Starting DeuceVerify Bot + FastAPI..."
 
-# Start the bot in the background
+# Start FastAPI with Uvicorn (using Railway's $PORT)
+uvicorn api.main:app --host 0.0.0.0 --port $PORT --workers 2 &
+
+# Start Telegram Bot
 python -m bot.main &
-
-# Start the Flask API (important: bind to $PORT)
-python -m api.main &
 
 # Wait for any process to exit
 wait -n
 
-# Exit with status of the process that exited first
+# Exit with the status of whichever process failed first
 exit $?
