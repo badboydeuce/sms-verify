@@ -1,7 +1,10 @@
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.utils.keyboard import (
+    InlineKeyboardBuilder
+)
 
 
 def main_menu_keyboard():
+
     kb = InlineKeyboardBuilder()
 
     kb.button(
