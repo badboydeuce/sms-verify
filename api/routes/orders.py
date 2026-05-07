@@ -1,22 +1,84 @@
-from flask import Blueprint, jsonify
-
-orders_router = Blueprint(
-    "orders",
-    __name__
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException
 )
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import (
+    AsyncSession
+)
 
-@orders_router.get("/api/order/otp/<order_id>")
-def get_otp(order_id):
+from api.dependencies.db import (
+    get_db
+)
 
-    return jsonify({
-        "otp": None
-    })
+from core.models.order import Order
+
+from core.services.order_service import (
+    OrderService
+)
+
+router = APIRouter()
 
 
-@orders_router.post("/api/order/cancel/<order_id>")
-def cancel_order(order_id):
+@router.get("/api/order/otp/{order_id}")
+async def get_order_otp(
+    order_id: int,
+    db: AsyncSession = Depends(get_db)
+):
 
-    return jsonify({
+    result = await db.execute(
+        select(Order).where(
+            Order.id == order_id
+        )
+    )
+
+    order = result.scalar_one_or_none()
+
+    if not order:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Order not found"
+        )
+
+    order = await OrderService.update_otp(
+        db,
+        order
+    )
+
+    return {
+        "otp": order.otp_code
+    }
+
+
+@router.post("/api/order/cancel/{order_id}")
+async def cancel_order(
+    order_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+
+    result = await db.execute(
+        select(Order).where(
+            Order.id == order_id
+        )
+    )
+
+    order = result.scalar_one_or_none()
+
+    if not order:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Order not found"
+        )
+
+    await OrderService.cancel_order(
+        db,
+        order
+    )
+
+    return {
         "status": "cancelled"
-    })
+    }
