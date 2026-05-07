@@ -1,25 +1,98 @@
-from flask import Blueprint, request, jsonify
+from uuid import uuid4
 
-wallet_router = Blueprint(
-    "wallet",
-    __name__
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException
 )
 
+from sqlalchemy.ext.asyncio import (
+    AsyncSession
+)
 
-@wallet_router.post("/api/wallet/fund")
-def fund_wallet():
+from api.schemas.wallet import (
+    FundWalletSchema
+)
 
-    data = request.json
+from api.dependencies.db import (
+    get_db
+)
 
-    telegram_id = data.get("telegram_id")
-    amount = data.get("amount")
+from core.validators.amount import (
+    validate_funding_amount
+)
 
-    if amount < 1500:
+from core.services.user_service import (
+    UserService
+)
 
-        return jsonify({
-            "error": "Minimum funding is ₦1,500"
-        }), 400
+from core.services.paystack_service import (
+    PaystackService
+)
 
-    return jsonify({
-        "message": "Payment initialized"
-    })
+from core.models.payment_transaction import (
+    PaymentTransaction
+)
+
+router = APIRouter()
+
+
+@router.post("/api/wallet/fund")
+async def fund_wallet(
+    payload: FundWalletSchema,
+    db: AsyncSession = Depends(get_db)
+):
+
+    validate_funding_amount(
+        payload.amount
+    )
+
+    user = (
+        await UserService.get_user_by_telegram_id(
+            db,
+            payload.telegram_id
+        )
+    )
+
+    if not user:
+
+        raise HTTPException(
+            status_code=404,
+            detail="User not found"
+        )
+
+    reference = str(uuid4())
+
+    payment = PaymentTransaction(
+        user_id=user.id,
+        reference=reference,
+        amount=payload.amount,
+        status="pending"
+    )
+
+    db.add(payment)
+
+    await db.commit()
+
+    response = (
+        await PaystackService.initialize_transaction(
+            email=f"{user.telegram_id}@deuceverify.com",
+            amount=int(payload.amount * 100),
+            reference=reference,
+            metadata={
+                "telegram_id":
+                user.telegram_id,
+
+                "user_id":
+                user.id
+            }
+        )
+    )
+
+    return {
+        "authorization_url":
+        response["data"]["authorization_url"],
+
+        "reference":
+        reference
+    }
