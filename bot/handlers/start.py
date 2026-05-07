@@ -1,13 +1,18 @@
 from aiogram import Router
+from aiogram.filters import CommandStart
 from aiogram.types import Message
 
-from bot.keyboards.main_menu import main_menu_keyboard
+from bot.keyboards.main_menu import (
+    main_menu_keyboard
+)
 
 router = Router()
 
 
-@router.message()
-async def start_handler(message: Message):
+@router.message(CommandStart())
+async def start_handler(
+    message: Message
+):
 
     text = """
 <b>Welcome to DeuceVerify</b>
@@ -15,9 +20,8 @@ async def start_handler(message: Message):
 Virtual Number SMS Verification Platform
 
 • One-Time SMS
-• Number Rentals
+• Rental Numbers
 • Compatible API
-• Fast OTP Delivery
 """
 
     await message.answer(
