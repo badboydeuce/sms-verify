@@ -49,6 +49,10 @@ async def process_funding_amount(
     state: FSMContext
 ):
 
+    if message.text.startswith("/"):
+        await state.clear()
+        return
+
     try:
 
         amount = int(message.text)
@@ -91,11 +95,15 @@ async def process_funding_amount(
 
         print("Funding error:", e)
 
+        await state.clear()
+
         return await message.answer(
             "❌ Failed to connect to payment server"
         )
 
     if response.status_code != 200:
+
+        await state.clear()
 
         return await message.answer(
             f"❌ {data.get('detail', 'Funding failed')}"
