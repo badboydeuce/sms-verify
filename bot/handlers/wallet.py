@@ -17,20 +17,25 @@ logger = logging.getLogger(__name__)
 
 # ====================== WALLET MENU ======================
 
+# ====================== WALLET MENU ======================
 @router.callback_query(F.data == "wallet_menu")
 async def wallet_menu(callback: CallbackQuery):
-    await callback.answer("✅ Wallet menu opened", show_alert=False)
+    await callback.answer("💰 Wallet menu", show_alert=False)
     
+    text = "💰 **Wallet Menu**"
+
     try:
+        # Try to edit current message
         await callback.message.edit_text(
-            "💰 **Wallet Menu**",
+            text,
             reply_markup=wallet_keyboard(),
             parse_mode="Markdown"
         )
     except Exception as e:
-        # Fallback if edit_text fails
+        # Fallback: Send new message if edit fails
+        print("Edit failed, sending new message:", e)   # For debugging
         await callback.message.answer(
-            "💰 **Wallet Menu**",
+            text,
             reply_markup=wallet_keyboard(),
             parse_mode="Markdown"
         )
