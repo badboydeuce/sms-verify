@@ -29,7 +29,7 @@ def main_menu_keyboard():
 
     kb.button(
         text="❓ Support",
-        callback_data="fund_wallet"
+        callback_data="support_menu"
     )
 
     kb.adjust(2)
