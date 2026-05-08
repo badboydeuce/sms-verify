@@ -10,7 +10,7 @@ class ThrottlingMiddleware(
 
     cache = {}
 
-    RATE_LIMIT = 1
+    RATE_LIMIT = 0
 
     async def __call__(
         self,
