@@ -1,9 +1,11 @@
 from aiogram.fsm.state import (
-    StatesGroup,
-    State
+    State,
+    StatesGroup
 )
 
 
-class WalletStates(StatesGroup):
+class WalletStates(
+    StatesGroup
+):
 
-    waiting_for_amount = State()
+    enter_amount = State()
