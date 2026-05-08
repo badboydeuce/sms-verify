@@ -19,15 +19,21 @@ logger = logging.getLogger(__name__)
 
 @router.callback_query(F.data == "wallet_menu")
 async def wallet_menu(callback: CallbackQuery):
-    await callback.answer("✅ Wallet button clicked!", show_alert=True)  # This popup is important for testing
+    await callback.answer("✅ Wallet menu opened", show_alert=False)
     
-    await callback.message.edit_text(
-        "💰 **Wallet Menu**\n\n"
-        "Testing - if you see this, it works.",
-        reply_markup=wallet_keyboard(),
-        parse_mode="Markdown"
-    )
-
+    try:
+        await callback.message.edit_text(
+            "💰 **Wallet Menu**",
+            reply_markup=wallet_keyboard(),
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        # Fallback if edit_text fails
+        await callback.message.answer(
+            "💰 **Wallet Menu**",
+            reply_markup=wallet_keyboard(),
+            parse_mode="Markdown"
+        )
 # ====================== FUND WALLET ======================
 
 @router.callback_query(WalletCallback.filter(F.action == "fund"))
