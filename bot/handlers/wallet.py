@@ -14,31 +14,24 @@ from core.config import API_BASE_URL
 router = Router()
 logger = logging.getLogger(__name__)
 
-
-# ====================== WALLET MENU ======================
-
 # ====================== WALLET MENU ======================
 @router.callback_query(F.data == "wallet_menu")
 async def wallet_menu(callback: CallbackQuery):
-    await callback.answer("💰 Wallet menu", show_alert=False)
-    
-    text = "💰 **Wallet Menu**"
+    await callback.answer("💰 Opening Wallet...", show_alert=False)
 
+    text = "💰 **Wallet Menu**\n\nChoose an option:"
+
+    # Force send a new message (most reliable)
     try:
-        # Try to edit current message
-        await callback.message.edit_text(
-            text,
-            reply_markup=wallet_keyboard(),
-            parse_mode="Markdown"
-        )
-    except Exception as e:
-        # Fallback: Send new message if edit fails
-        print("Edit failed, sending new message:", e)   # For debugging
         await callback.message.answer(
             text,
             reply_markup=wallet_keyboard(),
             parse_mode="Markdown"
         )
+        print("✅ Wallet menu sent successfully as new message")
+    except Exception as e:
+        print(f"❌ Failed to send wallet menu: {e}")
+        await callback.answer("Error opening menu", show_alert=True)
 # ====================== FUND WALLET ======================
 
 @router.callback_query(WalletCallback.filter(F.action == "fund"))
