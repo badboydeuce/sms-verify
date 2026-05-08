@@ -1,5 +1,13 @@
-from aiogram import Router
-from aiogram.types import Message
+from aiogram import (
+    Router,
+    F
+)
+
+from aiogram.types import (
+    Message,
+    CallbackQuery
+)
+
 from aiogram.fsm.context import FSMContext
 
 import httpx
@@ -11,6 +19,26 @@ from bot.states.wallet import (
 from core.config import settings
 
 router = Router()
+
+
+@router.callback_query(
+    F.data == "fund_wallet"
+)
+async def fund_wallet_callback(
+    callback: CallbackQuery,
+    state: FSMContext
+):
+
+    await callback.message.answer(
+        "💳 Enter amount to fund\n\n"
+        "Minimum: ₦1,500"
+    )
+
+    await state.set_state(
+        WalletStates.enter_amount
+    )
+
+    await callback.answer()
 
 
 @router.message(
@@ -41,21 +69,31 @@ async def process_funding_amount(
         "💳 Generating payment link..."
     )
 
-    async with httpx.AsyncClient() as client:
+    try:
 
-        response = await client.post(
-            f"{settings.API_BASE_URL}/api/wallet/fund",
-            json={
-                "telegram_id":
-                message.from_user.id,
+        async with httpx.AsyncClient() as client:
 
-                "amount":
-                amount
-            },
-            timeout=30
+            response = await client.post(
+                f"{settings.API_BASE_URL}/api/wallet/fund",
+                json={
+                    "telegram_id":
+                    message.from_user.id,
+
+                    "amount":
+                    amount
+                },
+                timeout=30
+            )
+
+        data = response.json()
+
+    except Exception as e:
+
+        print("Funding error:", e)
+
+        return await message.answer(
+            "❌ Failed to connect to payment server"
         )
-
-    data = response.json()
 
     if response.status_code != 200:
 
