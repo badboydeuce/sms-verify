@@ -16,7 +16,7 @@ from bot.states.wallet import (
     WalletStates
 )
 
-from core.config import settings
+from core.config import API_BASE_URL
 
 router = Router()
 
@@ -74,7 +74,7 @@ async def process_funding_amount(
         async with httpx.AsyncClient() as client:
 
             response = await client.post(
-                f"{settings.API_BASE_URL}/api/wallet/fund",
+                f"{API_BASE_URL}/api/wallet/fund",
                 json={
                     "telegram_id":
                     message.from_user.id,
