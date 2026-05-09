@@ -9,14 +9,14 @@ from core.database.base import Base
 
 
 class TransactionType(str, enum.Enum):
-    credit = "CREDIT"   # ✅ was "credit"
-    debit = "DEBIT"     # ✅ was "debit"
+    credit = "CREDIT"       # ✅ uppercase
+    debit = "DEBIT"         # ✅ uppercase
 
 
 class TransactionStatus(str, enum.Enum):
-    pending = "PENDING"       # ✅ was "pending"
-    completed = "COMPLETED"   # ✅ was "completed"
-    failed = "FAILED"         # ✅ was "failed"
+    pending = "pending"     # ✅ lowercase
+    completed = "completed" # ✅ lowercase
+    failed = "failed"       # ✅ lowercase
 
 
 
