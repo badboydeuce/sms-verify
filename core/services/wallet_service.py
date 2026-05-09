@@ -39,19 +39,28 @@ class WalletService:
         )
 
         user = result.scalar_one()
-
         user.balance += amount
 
-        transaction = Transaction(
-            user_id=user.id,
-            amount=amount,
-            type="CREDIT",       # ✅ was "credit"
-            status="completed",  # ✅ matches DB
-            reference=reference,
-            description=description
+        # ✅ Update existing transaction instead of inserting a new one
+        tx_result = await db.execute(
+            select(Transaction).where(Transaction.reference == reference)
         )
+        transaction = tx_result.scalar_one_or_none()
 
-        db.add(transaction)
+        if transaction:
+            transaction.status = "completed"
+            transaction.description = description
+        else:
+            # Fallback: insert if not found
+            db.add(Transaction(
+                user_id=user_id,
+                amount=amount,
+                type="CREDIT",
+                status="completed",
+                reference=reference,
+                description=description
+            ))
+
         await db.commit()
 
         return user.balance
@@ -80,8 +89,8 @@ class WalletService:
         transaction = Transaction(
             user_id=user.id,
             amount=amount,
-            type="DEBIT",        # ✅ was "debit"
-            status="completed",  # ✅ matches DB
+            type="DEBIT",
+            status="completed",
             reference=reference,
             description=description
         )
