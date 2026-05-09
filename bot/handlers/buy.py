@@ -243,7 +243,7 @@ async def buy_service(
 ):
 
     try:
-        country_id, service_id = callback_data.value.split(":")
+        country_id, service_id = callback_data.value.split("_")
     except ValueError:
         return await callback.answer(
             "Invalid selection",
