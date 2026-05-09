@@ -4,7 +4,7 @@ from core.smsman.rental import SMSManRental
 
 class SMSManService:
 
-    MARKUP_PERCENT = 1.5
+    MARKUP_PERCENT = 50
 
     @staticmethod
     def apply_markup(price: float) -> float:
