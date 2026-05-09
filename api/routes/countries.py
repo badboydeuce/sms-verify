@@ -1,24 +1,44 @@
-# api/routes/countries.py
-
 from fastapi import APIRouter
 import httpx
 import os
 
 router = APIRouter()
 
-SMSMAN_TOKEN = os.getenv("SMSMAN_TOKEN")
-
 
 @router.get("/countries")
 async def get_countries():
 
+    token = os.getenv("SMSMAN_TOKEN")
+
+    if not token:
+        return {
+            "success": False,
+            "error": "SMSMAN_TOKEN missing"
+        }
+
     url = "https://api.sms-man.com/control/get-countries"
 
     params = {
-        "token": SMSMAN_TOKEN
+        "token": token
     }
 
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url, params=params)
+    try:
 
-    return response.json()
+        async with httpx.AsyncClient(timeout=30) as client:
+
+            response = await client.get(
+                url,
+                params=params
+            )
+
+        return {
+            "status_code": response.status_code,
+            "response": response.text
+        }
+
+    except Exception as e:
+
+        return {
+            "success": False,
+            "error": str(e)
+        }
