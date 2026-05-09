@@ -112,7 +112,9 @@ async def choose_type(
 
 Choose country for activation number.
 """,
-                reply_markup=countries_keyboard(countries)
+                reply_markup=countries_keyboard(
+                    list(countries.values())
+                )
             )
 
         elif service_type == "rental":
