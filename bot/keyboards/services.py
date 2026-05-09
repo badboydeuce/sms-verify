@@ -25,7 +25,7 @@ def services_keyboard(
             callback_data=BuyCallback(
                 action="service",
                 value=(
-                    f"{country_id}:"
+                    f"{country_id}_"
                     f"{service['id']}"
                 )
             ).pack()
