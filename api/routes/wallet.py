@@ -11,7 +11,8 @@ from api.dependencies.db import get_db
 from core.validators.amount import validate_funding_amount
 from core.services.user_service import UserService
 from core.services.paystack_service import PaystackService
-from core.models.transaction import Transaction  # ✅ removed TransactionType, TransactionStatus
+from core.services.wallet_service import WalletService
+from core.models.transaction import Transaction
 
 router = APIRouter()
 
@@ -34,8 +35,8 @@ async def fund_wallet(
         user_id=user.id,
         reference=reference,
         amount=Decimal(str(payload.amount)),
-        type="CREDIT",      # ✅ plain string matching DB enum
-        status="pending",   # ✅ plain string matching DB enum
+        type="CREDIT",
+        status="pending",
         description="Wallet funding via Paystack"
     )
 
@@ -55,4 +56,23 @@ async def fund_wallet(
     return {
         "authorization_url": response["data"]["authorization_url"],
         "reference": reference
+    }
+
+
+# ====================== WALLET BALANCE ======================
+@router.get("/api/wallet/balance/{telegram_id}")
+async def get_wallet_balance(
+    telegram_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    user = await UserService.get_user_by_telegram_id(db, telegram_id)
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    balance = await WalletService.get_balance(db, user.id)
+
+    return {
+        "telegram_id": telegram_id,
+        "balance": float(balance)
     }
