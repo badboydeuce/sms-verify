@@ -18,7 +18,6 @@ async def get_countries():
 
     url = "https://api.sms-man.com/control/countries"
 
-
     params = {
         "token": token
     }
@@ -43,3 +42,22 @@ async def get_countries():
             "success": False,
             "error": str(e)
         }
+
+
+@router.get("/debug/countries")
+async def debug_countries():
+
+    from core.smsman.activation import SMSManActivation
+
+    try:
+
+        result = await SMSManActivation.get_countries()
+
+        return {
+            "type": str(type(result)),
+            "data": result
+        }
+
+    except Exception as e:
+
+        return {"error": str(e)}
