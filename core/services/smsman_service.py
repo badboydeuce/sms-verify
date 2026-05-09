@@ -1,5 +1,3 @@
-import asyncio
-
 from core.smsman.activation import SMSManActivation
 from core.smsman.rental import SMSManRental
 
@@ -28,7 +26,6 @@ class SMSManService:
         """
         raw = await SMSManActivation.get_services()
 
-        # API returns a list [{"id": "1", "name": "...", "code": "..."}]
         if isinstance(raw, list):
             return {str(item["id"]): item for item in raw}
 
@@ -40,45 +37,32 @@ class SMSManService:
         Normalizes raw prices into a flat list:
         [
             {
-                "application_id": "1",
-                "application": "Vkontakte",
-                "price": 15.0,
-                "count": 6455
+                "application_id": "125",
+                "application": "Twitter",
+                "price": 11.38,
+                "count": 13171
             },
             ...
         ]
         """
-        raw_prices, services_map = await asyncio.gather(
-            SMSManActivation.get_prices(country_id),
-            SMSManService.get_services()
-        )
-
-        # Raw: {"app_id": {"cost": "15", "count": 6455}, ...}
-        # country_id key may or may not be present depending on API version
-        if str(country_id) in raw_prices:
-            country_prices = raw_prices[str(country_id)]
-        else:
-            country_prices = raw_prices
+        raw = await SMSManActivation.get_prices(country_id)
 
         result = []
 
-        for app_id, data in country_prices.items():
-            service = services_map.get(str(app_id))
-
-            if not service:
-                continue
+        for app_id, data in raw.items():
 
             try:
+
                 result.append({
-                    "application_id": str(app_id),
-                    "application": service["name"],
+                    "application_id": str(data["application_id"]),
+                    "application": data["application"],
                     "price": float(data["cost"]),
                     "count": int(data.get("count", 0))
                 })
+
             except (KeyError, ValueError):
                 continue
 
-        # Sort by name for consistent display
         result.sort(key=lambda x: x["application"])
 
         return result
