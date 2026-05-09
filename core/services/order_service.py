@@ -3,6 +3,7 @@
 from decimal import Decimal
 from uuid import uuid4
 from datetime import datetime, timedelta
+import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +12,8 @@ from core.services.wallet_service import WalletService
 from core.services.smsman_service import SMSManService
 from core.exceptions.smsman import SMSManAPIError, NumberUnavailable
 from core.exceptions.wallet import InsufficientBalance
+
+logger = logging.getLogger(__name__)
 
 
 class OrderService:
@@ -73,7 +76,7 @@ class OrderService:
 
         order = Order(
             user_id=user_id,
-            order_type="ACTIVATION",    # ✅ was "activation"
+            order_type="ACTIVATION",
             service_id=service_id,
             service_name=service_name,
             country_id=country_id,
@@ -81,7 +84,7 @@ class OrderService:
             number=smsman_response["number"],
             request_id=str(smsman_response["request_id"]),
             cost=final_price,
-            status="PENDING",           # ✅ was "pending"
+            status="PENDING",
             expires_at=datetime.utcnow() + timedelta(minutes=20)
         )
 
@@ -133,7 +136,7 @@ class OrderService:
 
         order = Order(
             user_id=user_id,
-            order_type="RENTAL",        # ✅ was "rental"
+            order_type="RENTAL",
             service_id="rental",
             service_name="Rental Number",
             country_id=country_id,
@@ -141,7 +144,7 @@ class OrderService:
             number=smsman_response["number"],
             request_id=str(smsman_response["request_id"]),
             cost=final_price,
-            status="PENDING",           # ✅ was "active" (not in DB enum)
+            status="PENDING",
             rental_duration=f"{time} {rent_type}"
         )
 
@@ -158,13 +161,23 @@ class OrderService:
     ):
         response = await SMSManService.get_activation_sms(order.request_id)
 
-        code = response.get("sms_code")
+        logger.info(f"SMS-Man get_sms response: {response}")
 
-        if code:
-            order.otp_code = code
+        sms_text = (
+            response.get("sms_text")
+            or response.get("msg")
+            or response.get("sms_code")
+        )
+        sms_code = response.get("sms_code")
+
+        if sms_text:
+            order.otp_code = sms_code or sms_text
             order.sms_received = True
-            order.status = "RECEIVED"   # ✅ was "received"
+            order.status = "RECEIVED"
             await db.commit()
+
+            # attach full sms text to order object for display
+            order.sms_text = sms_text
 
         return order
 
@@ -173,6 +186,6 @@ class OrderService:
         db: AsyncSession,
         order: Order
     ):
-        order.status = "CANCELLED"      # ✅ was "cancelled"
+        order.status = "CANCELLED"
         await db.commit()
         return order
