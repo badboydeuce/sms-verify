@@ -1,19 +1,8 @@
-from aiogram.fsm.state import (
-    StatesGroup,
-    State
-)
+# bot/states/buy.py
+
+from aiogram.fsm.state import State, StatesGroup
 
 
 class BuyStates(StatesGroup):
-
-    choosing_type = State()
-
-    choosing_country = State()
-
-    choosing_service = State()
-
-    confirming_order = State()
-
-    choosing_rental_type = State()
-
-    choosing_rental_duration = State()
+    search_country = State()
+    search_service = State()
