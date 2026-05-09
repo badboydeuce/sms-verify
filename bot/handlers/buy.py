@@ -257,6 +257,7 @@ async def buy_service(
             await processing_message.edit_text("❌ Service unavailable.")
             return
 
+        # ✅ Apply markup only once here
         base_price = Decimal(str(selected_service["price"]))
         final_price = Decimal(str(SMSManService.apply_markup(float(base_price))))
 
@@ -274,7 +275,7 @@ async def buy_service(
                 country_name=country_name,
                 service_id=service_id,
                 service_name=selected_service["application"],
-                price=final_price
+                price=final_price  # ✅ already marked up, no further markup
             )
 
         msg = await processing_message.edit_text(
@@ -320,7 +321,6 @@ async def buy_service(
 
     finally:
         await callback.answer()
-
 
 # ====================== MAIN MENU ======================
 @router.callback_query(F.data == "main_menu")
