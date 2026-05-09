@@ -44,12 +44,10 @@ class OrderService:
             service_id
         )
 
-        # ✅ SMS-Man returns error_code on failure, not a "success" key
         if "error_code" in smsman_response:
             error_code = smsman_response["error_code"]
             error_msg = smsman_response.get("error_msg", error_code)
 
-            # Refund the deducted balance
             await WalletService.credit_balance(
                 db=db,
                 user_id=user_id,
@@ -63,28 +61,27 @@ class OrderService:
 
             raise SMSManAPIError(error_msg)
 
-        # ✅ Success — response contains request_id and number
         if "request_id" not in smsman_response or "number" not in smsman_response:
             await WalletService.credit_balance(
                 db=db,
                 user_id=user_id,
                 amount=final_price,
                 reference=f"refund_{reference}",
-                description=f"Refund: unexpected SMS-Man response"
+                description="Refund: unexpected SMS-Man response"
             )
             raise SMSManAPIError("Unexpected SMS-Man response")
 
         order = Order(
             user_id=user_id,
-            order_type="activation",
+            order_type="ACTIVATION",    # ✅ was "activation"
             service_id=service_id,
             service_name=service_name,
             country_id=country_id,
             country_name=country_name,
             number=smsman_response["number"],
-            request_id=smsman_response["request_id"],
+            request_id=str(smsman_response["request_id"]),
             cost=final_price,
-            status="pending",
+            status="PENDING",           # ✅ was "pending"
             expires_at=datetime.utcnow() + timedelta(minutes=20)
         )
 
@@ -136,15 +133,15 @@ class OrderService:
 
         order = Order(
             user_id=user_id,
-            order_type="rental",
+            order_type="RENTAL",        # ✅ was "rental"
             service_id="rental",
             service_name="Rental Number",
             country_id=country_id,
             country_name=country_name,
             number=smsman_response["number"],
-            request_id=smsman_response["request_id"],
+            request_id=str(smsman_response["request_id"]),
             cost=final_price,
-            status="active",
+            status="PENDING",           # ✅ was "active" (not in DB enum)
             rental_duration=f"{time} {rent_type}"
         )
 
@@ -166,7 +163,7 @@ class OrderService:
         if code:
             order.otp_code = code
             order.sms_received = True
-            order.status = "received"
+            order.status = "RECEIVED"   # ✅ was "received"
             await db.commit()
 
         return order
@@ -176,6 +173,6 @@ class OrderService:
         db: AsyncSession,
         order: Order
     ):
-        order.status = "cancelled"
+        order.status = "CANCELLED"      # ✅ was "cancelled"
         await db.commit()
         return order
