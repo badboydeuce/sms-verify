@@ -1,3 +1,5 @@
+# core/services/wallet_service.py
+
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -14,11 +16,8 @@ class WalletService:
         db: AsyncSession,
         user_id: int
     ):
-
         result = await db.execute(
-            select(User).where(
-                User.id == user_id
-            )
+            select(User).where(User.id == user_id)
         )
 
         user = result.scalar_one()
@@ -33,7 +32,6 @@ class WalletService:
         reference: str,
         description: str
     ):
-
         result = await db.execute(
             select(User)
             .where(User.id == user_id)
@@ -47,14 +45,13 @@ class WalletService:
         transaction = Transaction(
             user_id=user.id,
             amount=amount,
-            type="credit",
-            status="completed",
+            type="CREDIT",       # ✅ was "credit"
+            status="completed",  # ✅ matches DB
             reference=reference,
             description=description
         )
 
         db.add(transaction)
-
         await db.commit()
 
         return user.balance
@@ -67,7 +64,6 @@ class WalletService:
         reference: str,
         description: str
     ):
-
         result = await db.execute(
             select(User)
             .where(User.id == user_id)
@@ -77,23 +73,20 @@ class WalletService:
         user = result.scalar_one()
 
         if user.balance < amount:
-            raise Exception(
-                "Insufficient balance"
-            )
+            raise Exception("Insufficient balance")
 
         user.balance -= amount
 
         transaction = Transaction(
             user_id=user.id,
             amount=amount,
-            type="debit",
-            status="completed",
+            type="DEBIT",        # ✅ was "debit"
+            status="completed",  # ✅ matches DB
             reference=reference,
             description=description
         )
 
         db.add(transaction)
-
         await db.commit()
 
         return user.balance
