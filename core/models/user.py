@@ -1,3 +1,5 @@
+# core/models/user.py
+
 from sqlalchemy import (
     BigInteger,
     String,
@@ -16,7 +18,10 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(
+        BigInteger,          # ✅ was default Integer
+        primary_key=True
+    )
 
     telegram_id: Mapped[int] = mapped_column(
         BigInteger,
