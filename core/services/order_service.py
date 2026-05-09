@@ -1,3 +1,5 @@
+# core/services/order_service.py
+
 from decimal import Decimal
 from uuid import uuid4
 from datetime import datetime, timedelta
@@ -7,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.models.order import Order
 from core.services.wallet_service import WalletService
 from core.services.smsman_service import SMSManService
+from core.exceptions.smsman import SMSManAPIError, NumberUnavailable
+from core.exceptions.wallet import InsufficientBalance
 
 
 class OrderService:
@@ -21,11 +25,8 @@ class OrderService:
         service_name: str,
         price: Decimal
     ):
-
         final_price = Decimal(
-            SMSManService.apply_markup(
-                float(price)
-            )
+            SMSManService.apply_markup(float(price))
         )
 
         reference = str(uuid4())
@@ -38,18 +39,40 @@ class OrderService:
             description=f"{service_name} activation"
         )
 
-        smsman_response = (
-            await SMSManService.buy_activation_number(
-                country_id,
-                service_id
-            )
+        smsman_response = await SMSManService.buy_activation_number(
+            country_id,
+            service_id
         )
 
-        if not smsman_response.get("success"):
+        # ✅ SMS-Man returns error_code on failure, not a "success" key
+        if "error_code" in smsman_response:
+            error_code = smsman_response["error_code"]
+            error_msg = smsman_response.get("error_msg", error_code)
 
-            raise Exception(
-                "SMS-Man purchase failed"
+            # Refund the deducted balance
+            await WalletService.credit_balance(
+                db=db,
+                user_id=user_id,
+                amount=final_price,
+                reference=f"refund_{reference}",
+                description=f"Refund: {service_name} activation failed"
             )
+
+            if error_code == "no_numbers":
+                raise NumberUnavailable(error_msg)
+
+            raise SMSManAPIError(error_msg)
+
+        # ✅ Success — response contains request_id and number
+        if "request_id" not in smsman_response or "number" not in smsman_response:
+            await WalletService.credit_balance(
+                db=db,
+                user_id=user_id,
+                amount=final_price,
+                reference=f"refund_{reference}",
+                description=f"Refund: unexpected SMS-Man response"
+            )
+            raise SMSManAPIError("Unexpected SMS-Man response")
 
         order = Order(
             user_id=user_id,
@@ -62,14 +85,11 @@ class OrderService:
             request_id=smsman_response["request_id"],
             cost=final_price,
             status="pending",
-            expires_at=datetime.utcnow()
-            + timedelta(minutes=20)
+            expires_at=datetime.utcnow() + timedelta(minutes=20)
         )
 
         db.add(order)
-
         await db.commit()
-
         await db.refresh(order)
 
         return order
@@ -84,11 +104,8 @@ class OrderService:
         time: int,
         price: Decimal
     ):
-
         final_price = Decimal(
-            SMSManService.apply_markup(
-                float(price)
-            )
+            SMSManService.apply_markup(float(price))
         )
 
         reference = str(uuid4())
@@ -101,13 +118,21 @@ class OrderService:
             description="Rental number purchase"
         )
 
-        smsman_response = (
-            await SMSManService.rent_number(
-                country_id,
-                rent_type,
-                time
-            )
+        smsman_response = await SMSManService.rent_number(
+            country_id,
+            rent_type,
+            time
         )
+
+        if "error_code" in smsman_response:
+            await WalletService.credit_balance(
+                db=db,
+                user_id=user_id,
+                amount=final_price,
+                reference=f"refund_{reference}",
+                description="Refund: rental number failed"
+            )
+            raise SMSManAPIError(smsman_response.get("error_msg", "Rental failed"))
 
         order = Order(
             user_id=user_id,
@@ -124,9 +149,7 @@ class OrderService:
         )
 
         db.add(order)
-
         await db.commit()
-
         await db.refresh(order)
 
         return order
@@ -136,21 +159,14 @@ class OrderService:
         db: AsyncSession,
         order: Order
     ):
-
-        response = (
-            await SMSManService.get_activation_sms(
-                order.request_id
-            )
-        )
+        response = await SMSManService.get_activation_sms(order.request_id)
 
         code = response.get("sms_code")
 
         if code:
-
             order.otp_code = code
             order.sms_received = True
             order.status = "received"
-
             await db.commit()
 
         return order
@@ -160,9 +176,6 @@ class OrderService:
         db: AsyncSession,
         order: Order
     ):
-
         order.status = "cancelled"
-
         await db.commit()
-
         return order
