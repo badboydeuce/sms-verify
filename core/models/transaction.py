@@ -1,7 +1,8 @@
 # core/models/transaction.py
 
-from sqlalchemy import String, Numeric, DateTime, ForeignKey, Integer, Enum
+from sqlalchemy import String, Numeric, DateTime, ForeignKey, Integer
 from sqlalchemy.orm import mapped_column, Mapped
+from sqlalchemy.dialects.postgresql import ENUM as PgEnum
 from datetime import datetime
 import enum
 
@@ -9,15 +10,8 @@ from core.database.base import Base
 
 
 class TransactionType(str, enum.Enum):
-    credit = "CREDIT"       # ✅ uppercase
-    debit = "DEBIT"         # ✅ uppercase
-
-
-class TransactionStatus(str, enum.Enum):
-    pending = "pending"     # ✅ lowercase
-    completed = "completed" # ✅ lowercase
-    failed = "failed"       # ✅ lowercase
-
+    credit = "CREDIT"
+    debit = "DEBIT"
 
 
 class TransactionStatus(str, enum.Enum):
@@ -43,14 +37,14 @@ class Transaction(Base):
         nullable=False
     )
 
-    type: Mapped[TransactionType] = mapped_column(
-        Enum(TransactionType, name="transactiontype"),  # ✅ matches DB enum name
+    type: Mapped[str] = mapped_column(
+        PgEnum("CREDIT", "DEBIT", name="transactiontype", create_type=False),
         nullable=False
     )
 
-    status: Mapped[TransactionStatus] = mapped_column(
-        Enum(TransactionStatus, name="transactionstatus"),
-        default=TransactionStatus.pending
+    status: Mapped[str] = mapped_column(
+        PgEnum("pending", "completed", "failed", name="transactionstatus", create_type=False),
+        default="pending"
     )
 
     reference: Mapped[str] = mapped_column(
