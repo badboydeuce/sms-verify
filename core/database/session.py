@@ -1,3 +1,5 @@
+# core/database/session.py
+
 import os
 
 from sqlalchemy.ext.asyncio import (
@@ -21,7 +23,10 @@ engine = create_async_engine(
     echo=False,
     pool_pre_ping=True,
     pool_size=20,
-    max_overflow=40
+    max_overflow=40,
+    connect_args={
+        "prepared_statement_cache_size": 0  # ✅ disables asyncpg statement cache
+    }
 )
 
 AsyncSessionLocal = async_sessionmaker(
