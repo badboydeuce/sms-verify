@@ -30,6 +30,10 @@ from api.routes.admin import (
     router as admin_router
 )
 
+from api.routes.countries import (
+    router as countries_router
+)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -62,3 +66,10 @@ app.include_router(webhook_router)
 app.include_router(orders_router)
 app.include_router(profile_router)
 app.include_router(admin_router)
+
+# NEW ROUTE
+app.include_router(
+    countries_router,
+    prefix="/api",
+    tags=["Countries"]
+)
