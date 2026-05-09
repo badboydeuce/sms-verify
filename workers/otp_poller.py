@@ -38,17 +38,23 @@ async def poll_order(
                     logger.error(f"poll_order: order {order_id} not found")
                     return
 
-                # Check if cancelled
                 if order.status == "CANCELLED":
                     return
 
                 order = await OrderService.update_otp(db, order)
 
-                if order.otp_code:
+                if order.sms_received:
+                    sms_text = getattr(order, "sms_text", None) or order.otp_code
+
                     await bot.edit_message_text(
                         chat_id=chat_id,
                         message_id=message_id,
-                        text=f"✅ <b>OTP Received</b>\n\nCode:\n<code>{order.otp_code}</code>",
+                        text=(
+                            f"✅ <b>SMS Received</b>\n\n"
+                            f"📱 Number: <code>{order.number}</code>\n"
+                            f"📦 Service: {order.service_name}\n\n"
+                            f"💬 Message:\n<code>{sms_text}</code>"
+                        ),
                         parse_mode="HTML"
                     )
                     return
@@ -59,7 +65,7 @@ async def poll_order(
         await asyncio.sleep(POLL_INTERVAL)
         elapsed += POLL_INTERVAL
 
-    # Timed out — notify user
+    # Timed out
     try:
         async with AsyncSessionLocal() as db:
             result = await db.execute(
@@ -74,9 +80,9 @@ async def poll_order(
             chat_id=chat_id,
             message_id=message_id,
             text=(
-                "⏰ <b>OTP Timeout</b>\n\n"
-                "No SMS received within 5 minutes.\n"
-                "The number has expired."
+                "⏰ <b>No SMS Received</b>\n\n"
+                "The number expired after 5 minutes.\n"
+                "Please try another number."
             ),
             parse_mode="HTML"
         )
