@@ -9,8 +9,15 @@ from core.database.base import Base
 
 
 class TransactionType(str, enum.Enum):
-    credit = "credit"
-    debit = "debit"
+    credit = "CREDIT"   # ✅ was "credit"
+    debit = "DEBIT"     # ✅ was "debit"
+
+
+class TransactionStatus(str, enum.Enum):
+    pending = "PENDING"       # ✅ was "pending"
+    completed = "COMPLETED"   # ✅ was "completed"
+    failed = "FAILED"         # ✅ was "failed"
+
 
 
 class TransactionStatus(str, enum.Enum):
