@@ -161,8 +161,12 @@ class OrderService:
     ):
         response = await SMSManService.get_activation_sms(order.request_id)
 
-        print(f"SMS-MAN RESPONSE: {response}", flush=True)  # ✅ temporary debug
+        print(f"SMS-MAN RESPONSE: {response}", flush=True)
         logger.info(f"SMS-Man get_sms response: {response}")
+
+        # ✅ "wait_sms" means still waiting — not an error, skip this poll
+        if response.get("error_code") == "wait_sms":
+            return order
 
         sms_text = (
             response.get("sms_text")
