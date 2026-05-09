@@ -61,3 +61,22 @@ async def debug_countries():
     except Exception as e:
 
         return {"error": str(e)}
+
+
+@router.get("/debug/prices/{country_id}")
+async def debug_prices(country_id: str):
+
+    from core.smsman.activation import SMSManActivation
+
+    try:
+
+        result = await SMSManActivation.get_prices(country_id)
+
+        return {
+            "type": str(type(result)),
+            "data": result
+        }
+
+    except Exception as e:
+
+        return {"error": str(e)}
