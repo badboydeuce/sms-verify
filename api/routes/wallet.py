@@ -11,7 +11,7 @@ from api.dependencies.db import get_db
 from core.validators.amount import validate_funding_amount
 from core.services.user_service import UserService
 from core.services.paystack_service import PaystackService
-from core.models.transaction import Transaction          # ✅ unified model
+from core.models.transaction import Transaction, TransactionType, TransactionStatus
 
 router = APIRouter()
 
@@ -33,9 +33,9 @@ async def fund_wallet(
     payment = Transaction(
         user_id=user.id,
         reference=reference,
-        amount=Decimal(str(payload.amount)),             # ✅ float → Decimal
-        type="credit",
-        status="pending",
+        amount=Decimal(str(payload.amount)),
+        type=TransactionType.credit,        # ✅ was "credit"
+        status=TransactionStatus.pending,   # ✅ was "pending"
         description="Wallet funding via Paystack"
     )
 
