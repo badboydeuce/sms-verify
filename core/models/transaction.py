@@ -1,10 +1,22 @@
 # core/models/transaction.py
 
-from sqlalchemy import String, Numeric, DateTime, ForeignKey, Integer
+from sqlalchemy import String, Numeric, DateTime, ForeignKey, Integer, Enum
 from sqlalchemy.orm import mapped_column, Mapped
 from datetime import datetime
+import enum
 
 from core.database.base import Base
+
+
+class TransactionType(str, enum.Enum):
+    credit = "credit"
+    debit = "debit"
+
+
+class TransactionStatus(str, enum.Enum):
+    pending = "pending"
+    completed = "completed"
+    failed = "failed"
 
 
 class Transaction(Base):
@@ -24,14 +36,14 @@ class Transaction(Base):
         nullable=False
     )
 
-    type: Mapped[str] = mapped_column(
-        String(50),
+    type: Mapped[TransactionType] = mapped_column(
+        Enum(TransactionType, name="transactiontype"),  # ✅ matches DB enum name
         nullable=False
     )
 
-    status: Mapped[str] = mapped_column(
-        String(50),
-        default="pending"
+    status: Mapped[TransactionStatus] = mapped_column(
+        Enum(TransactionStatus, name="transactionstatus"),
+        default=TransactionStatus.pending
     )
 
     reference: Mapped[str] = mapped_column(
