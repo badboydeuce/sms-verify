@@ -1,11 +1,14 @@
+# core/models/order.py
+
 from sqlalchemy import (
     ForeignKey,
     String,
     Numeric,
     DateTime,
-    Boolean
+    Boolean,
+    Integer
 )
-
+from sqlalchemy.dialects.postgresql import ENUM as PgEnum
 from sqlalchemy.orm import mapped_column, Mapped
 from datetime import datetime
 
@@ -23,28 +26,19 @@ class Order(Base):
     )
 
     order_type: Mapped[str] = mapped_column(
-        String(50)
+        PgEnum("ACTIVATION", "RENTAL", name="ordertype", create_type=False),  # ✅
+        nullable=False
     )
 
-    service_id: Mapped[str] = mapped_column(
-        String(100)
-    )
+    service_id: Mapped[str] = mapped_column(String(100))
 
-    service_name: Mapped[str] = mapped_column(
-        String(255)
-    )
+    service_name: Mapped[str] = mapped_column(String(255))
 
-    country_id: Mapped[str] = mapped_column(
-        String(50)
-    )
+    country_id: Mapped[str] = mapped_column(String(50))
 
-    country_name: Mapped[str] = mapped_column(
-        String(255)
-    )
+    country_name: Mapped[str] = mapped_column(String(255))
 
-    number: Mapped[str] = mapped_column(
-        String(255)
-    )
+    number: Mapped[str] = mapped_column(String(255))
 
     request_id: Mapped[str] = mapped_column(
         String(255),
@@ -52,13 +46,11 @@ class Order(Base):
         index=True
     )
 
-    cost: Mapped[float] = mapped_column(
-        Numeric(12, 2)
-    )
+    cost: Mapped[float] = mapped_column(Numeric(12, 2))
 
     status: Mapped[str] = mapped_column(
-        String(50),
-        default="pending"
+        PgEnum("PENDING", "RECEIVED", "EXPIRED", "CANCELLED", "COMPLETED", name="orderstatus", create_type=False),  # ✅
+        default="PENDING"
     )
 
     otp_code: Mapped[str | None] = mapped_column(
