@@ -1,10 +1,9 @@
+import logging
 from decimal import Decimal
 from asyncio import create_task
 
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
-
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.callback_factories.buy import BuyCallback
 
@@ -49,6 +48,8 @@ from workers.otp_poller import (
     poll_order
 )
 
+logger = logging.getLogger(__name__)
+
 router = Router()
 
 
@@ -89,23 +90,21 @@ async def choose_type(
 
     service_type = callback_data.value
 
-    if service_type == "activation":
+    try:
 
-        await callback.message.edit_text(
-            "⏳ Fetching countries..."
-        )
+        if service_type == "activation":
 
-        try:
-
-            countries = (
-                await SMSManService.get_countries()
+            await callback.message.edit_text(
+                "⏳ Fetching countries..."
             )
 
-            if not countries:
+            countries = await SMSManService.get_countries()
 
-                return await callback.message.edit_text(
+            if not countries:
+                await callback.message.edit_text(
                     "❌ No countries available."
                 )
+                return
 
             await callback.message.edit_text(
                 """
@@ -113,21 +112,13 @@ async def choose_type(
 
 Choose country for activation number.
 """,
-                reply_markup=countries_keyboard(
-                    countries
-                )
+                reply_markup=countries_keyboard(countries)
             )
 
-        except Exception:
+        elif service_type == "rental":
 
             await callback.message.edit_text(
-                "⚠️ Failed to fetch countries."
-            )
-
-    elif service_type == "rental":
-
-        await callback.message.edit_text(
-            """
+                """
 ♻️ Rental numbers coming next...
 
 Choose:
@@ -136,19 +127,29 @@ Choose:
 • Week
 • Month
 """
-        )
+            )
 
-    elif service_type == "compatible":
+        elif service_type == "compatible":
 
-        await callback.message.edit_text(
-            """
+            await callback.message.edit_text(
+                """
 🔗 Compatible API
 
 API integration panel coming soon.
 """
+            )
+
+    except Exception as e:
+
+        logger.error(f"choose_type failed: {e}")
+
+        await callback.message.edit_text(
+            "⚠️ Failed to fetch countries."
         )
 
-    await callback.answer()
+    finally:
+
+        await callback.answer()
 
 
 @router.callback_query(
@@ -169,17 +170,13 @@ async def choose_country(
 
     try:
 
-        prices = (
-            await SMSManService.get_prices(
-                country_id
-            )
-        )
+        prices = await SMSManService.get_prices(country_id)
 
         if not prices:
-
-            return await callback.message.edit_text(
+            await callback.message.edit_text(
                 "❌ No services available."
             )
+            return
 
         services = []
 
@@ -187,37 +184,28 @@ async def choose_country(
 
             try:
 
-                base_price = Decimal(
-                    str(item["price"])
-                )
+                base_price = Decimal(str(item["price"]))
 
                 final_price = Decimal(
-                    str(
-                        SMSManService.apply_markup(
-                            float(base_price)
-                        )
-                    )
+                    str(SMSManService.apply_markup(float(base_price)))
                 )
 
                 services.append({
-                    "id":
-                    item["application_id"],
-
-                    "name":
-                    item["application"],
-
-                    "price":
-                    final_price
+                    "id": item["application_id"],
+                    "name": item["application"],
+                    "price": final_price
                 })
 
-            except Exception:
+            except Exception as e:
+
+                logger.warning(f"Skipping service item: {e}")
                 continue
 
         if not services:
-
-            return await callback.message.edit_text(
+            await callback.message.edit_text(
                 "❌ No purchasable services found."
             )
+            return
 
         await callback.message.edit_text(
             """
@@ -225,19 +213,20 @@ async def choose_country(
 
 Choose service to purchase.
 """,
-            reply_markup=services_keyboard(
-                services,
-                country_id
-            )
+            reply_markup=services_keyboard(services, country_id)
         )
 
-    except Exception:
+    except Exception as e:
+
+        logger.error(f"choose_country failed: {e}")
 
         await callback.message.edit_text(
             "⚠️ Failed to fetch services."
         )
 
-    await callback.answer()
+    finally:
+
+        await callback.answer()
 
 
 @router.callback_query(
@@ -252,13 +241,8 @@ async def buy_service(
 ):
 
     try:
-
-        country_id, service_id = (
-            callback_data.value.split(":")
-        )
-
+        country_id, service_id = callback_data.value.split(":")
     except ValueError:
-
         return await callback.answer(
             "Invalid selection",
             show_alert=True
@@ -273,61 +257,54 @@ your virtual number.
 """
     )
 
-    async with AsyncSessionLocal() as db:
+    try:
 
-        try:
+        prices = await SMSManService.get_prices(country_id)
 
-            prices = (
-                await SMSManService.get_prices(
-                    country_id
-                )
+        selected_service = next(
+            (
+                i for i in prices
+                if str(i["application_id"]) == str(service_id)
+            ),
+            None
+        )
+
+        if not selected_service:
+            await processing_message.edit_text(
+                "❌ Service unavailable."
+            )
+            return
+
+        base_price = Decimal(str(selected_service["price"]))
+
+        final_price = Decimal(
+            str(SMSManService.apply_markup(float(base_price)))
+        )
+
+        countries = await SMSManService.get_countries()
+
+        country_name = next(
+            (
+                c["title"] for c in countries.values()
+                if str(c["id"]) == str(country_id)
+            ),
+            "Unknown"
+        )
+
+        async with AsyncSessionLocal() as db:
+
+            order = await OrderService.create_activation_order(
+                db=db,
+                user_id=db_user.id,
+                country_id=country_id,
+                country_name=country_name,
+                service_id=service_id,
+                service_name=selected_service["application"],
+                price=final_price
             )
 
-            selected_service = None
-
-            for item in prices:
-
-                if str(
-                    item["application_id"]
-                ) == str(service_id):
-
-                    selected_service = item
-                    break
-
-            if not selected_service:
-
-                return await processing_message.edit_text(
-                    "❌ Service unavailable."
-                )
-
-            base_price = Decimal(
-                str(selected_service["price"])
-            )
-
-            final_price = Decimal(
-                str(
-                    SMSManService.apply_markup(
-                        float(base_price)
-                    )
-                )
-            )
-
-            order = (
-                await OrderService.create_activation_order(
-                    db=db,
-                    user_id=db_user.id,
-                    country_id=country_id,
-                    country_name="Unknown",
-                    service_id=service_id,
-                    service_name=selected_service[
-                        "application"
-                    ],
-                    price=final_price
-                )
-            )
-
-            msg = await processing_message.edit_text(
-                f"""
+        msg = await processing_message.edit_text(
+            f"""
 <b>✅ Number Purchased</b>
 
 📱 Number:
@@ -346,62 +323,64 @@ your virtual number.
 
 Auto-refresh every 5 seconds.
 """,
-                reply_markup=activation_order_keyboard(
-                    order.id
-                )
+            reply_markup=activation_order_keyboard(order.id)
+        )
+
+        create_task(
+            poll_order(
+                bot=callback.bot,
+                order_id=order.id,
+                chat_id=callback.message.chat.id,
+                message_id=msg.message_id
             )
+        )
 
-            create_task(
-                poll_order(
-                    bot=callback.bot,
-                    order_id=order.id,
-                    chat_id=callback.message.chat.id,
-                    message_id=msg.message_id
-                )
-            )
+    except InsufficientBalance:
 
-        except InsufficientBalance:
-
-            await processing_message.edit_text(
-                """
+        await processing_message.edit_text(
+            """
 ❌ Insufficient balance.
 
 Please fund your wallet first.
 """
-            )
+        )
 
-        except NumberUnavailable:
+    except NumberUnavailable:
 
-            await processing_message.edit_text(
-                """
+        await processing_message.edit_text(
+            """
 🚫 Number not available.
 
 Try another country or service.
 """
-            )
+        )
 
-        except SMSManAPIError:
+    except SMSManAPIError:
 
-            await processing_message.edit_text(
-                """
+        await processing_message.edit_text(
+            """
 ⚠️ SMS-Man API error.
 
 Retry again in a few seconds.
 """
-            )
+        )
 
-        except Exception as e:
+    except Exception as e:
 
-            await processing_message.edit_text(
-                f"""
+        logger.error(f"buy_service failed: {e}")
+
+        await processing_message.edit_text(
+            f"""
 ❌ Purchase failed.
 
 Error:
 <code>{str(e)}</code>
 """
-            )
+        )
 
-    await callback.answer()
+    finally:
+
+        await callback.answer()
 
 
 @router.callback_query(
