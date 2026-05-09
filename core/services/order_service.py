@@ -161,6 +161,7 @@ class OrderService:
     ):
         response = await SMSManService.get_activation_sms(order.request_id)
 
+        print(f"SMS-MAN RESPONSE: {response}", flush=True)  # ✅ temporary debug
         logger.info(f"SMS-Man get_sms response: {response}")
 
         sms_text = (
@@ -175,8 +176,6 @@ class OrderService:
             order.sms_received = True
             order.status = "RECEIVED"
             await db.commit()
-
-            # attach full sms text to order object for display
             order.sms_text = sms_text
 
         return order
