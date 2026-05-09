@@ -28,9 +28,7 @@ class OrderService:
         service_name: str,
         price: Decimal
     ):
-        final_price = Decimal(
-            SMSManService.apply_markup(float(price))
-        )
+        final_price = price  # ✅ markup already applied in handler
 
         reference = str(uuid4())
 
@@ -104,9 +102,7 @@ class OrderService:
         time: int,
         price: Decimal
     ):
-        final_price = Decimal(
-            SMSManService.apply_markup(float(price))
-        )
+        final_price = price  # ✅ markup already applied in handler
 
         reference = str(uuid4())
 
@@ -164,7 +160,6 @@ class OrderService:
         print(f"SMS-MAN RESPONSE: {response}", flush=True)
         logger.info(f"SMS-Man get_sms response: {response}")
 
-        # ✅ "wait_sms" means still waiting — not an error, skip this poll
         if response.get("error_code") == "wait_sms":
             return order
 
