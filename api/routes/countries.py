@@ -16,7 +16,8 @@ async def get_countries():
             "error": "SMSMAN_TOKEN missing"
         }
 
-    url = "https://api.sms-man.com/control/get-countries"
+    url = "https://api.sms-man.com/control/countries"
+
 
     params = {
         "token": token
