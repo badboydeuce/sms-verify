@@ -1,3 +1,5 @@
+# core/services/smsman_service.py
+
 from core.smsman.activation import SMSManActivation
 from core.smsman.rental import SMSManRental
 
@@ -12,18 +14,10 @@ class SMSManService:
 
     @staticmethod
     async def get_countries() -> dict:
-        """
-        Returns dict keyed by country_id:
-        {"3": {"id": "3", "title": "China", "code": "CN"}, ...}
-        """
         return await SMSManActivation.get_countries()
 
     @staticmethod
     async def get_services() -> dict:
-        """
-        Returns dict keyed by service_id:
-        {"1": {"id": "1", "name": "Vkontakte", "code": "vk"}, ...}
-        """
         raw = await SMSManActivation.get_services()
 
         if isinstance(raw, list):
@@ -33,33 +27,18 @@ class SMSManService:
 
     @staticmethod
     async def get_prices(country_id: int | str) -> list[dict]:
-        """
-        Normalizes raw prices into a flat list:
-        [
-            {
-                "application_id": "125",
-                "application": "Twitter",
-                "price": 11.38,
-                "count": 13171
-            },
-            ...
-        ]
-        """
         raw = await SMSManActivation.get_prices(country_id)
 
         result = []
 
         for app_id, data in raw.items():
-
             try:
-
                 result.append({
                     "application_id": str(data["application_id"]),
                     "application": data["application"],
                     "price": float(data["cost"]),
                     "count": int(data.get("count", 0))
                 })
-
             except (KeyError, ValueError):
                 continue
 
@@ -89,3 +68,11 @@ class SMSManService:
     @staticmethod
     async def get_rental_sms(request_id: int) -> dict:
         return await SMSManRental.get_all_sms(request_id)
+
+    @staticmethod
+    async def get_rental_limits(                # ✅ added
+        country_id: int | str,
+        rent_type: str,
+        time: int
+    ) -> dict:
+        return await SMSManRental.get_limits(country_id, rent_type, time)
