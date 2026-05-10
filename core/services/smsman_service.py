@@ -6,15 +6,16 @@ from core.smsman.rental import SMSManRental
 
 class SMSManService:
 
-    MARKUP_PERCENT = 1500
+    MARKUP_PERCENT = 1500        # One-time SMS markup
+    RENTAL_MARKUP_PERCENT = 50   # ✅ Rental markup (adjust as needed)
 
     @staticmethod
     def apply_markup(price: float) -> float:
         return round(price * (1 + SMSManService.MARKUP_PERCENT / 100), 2)
 
     @staticmethod
-    async def get_countries() -> dict:
-        return await SMSManActivation.get_countries()
+    def apply_rental_markup(price: float) -> float:        # ✅ added
+        return round(price * (1 + SMSManService.RENTAL_MARKUP_PERCENT / 100), 2)
 
     @staticmethod
     async def get_services() -> dict:
