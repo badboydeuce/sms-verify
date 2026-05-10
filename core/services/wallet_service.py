@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.models.user import User
 from core.models.transaction import Transaction
+from core.exceptions.wallet import InsufficientBalance  # ✅ added
 
 
 class WalletService:
@@ -41,7 +42,6 @@ class WalletService:
         user = result.scalar_one()
         user.balance += amount
 
-        # ✅ Update existing transaction instead of inserting a new one
         tx_result = await db.execute(
             select(Transaction).where(Transaction.reference == reference)
         )
@@ -51,7 +51,6 @@ class WalletService:
             transaction.status = "completed"
             transaction.description = description
         else:
-            # Fallback: insert if not found
             db.add(Transaction(
                 user_id=user_id,
                 amount=amount,
@@ -82,7 +81,7 @@ class WalletService:
         user = result.scalar_one()
 
         if user.balance < amount:
-            raise Exception("Insufficient balance")
+            raise InsufficientBalance()  # ✅ was: raise Exception("Insufficient balance")
 
         user.balance -= amount
 
