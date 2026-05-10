@@ -1,60 +1,28 @@
-# add to bot/handlers/admin.py
+# bot/keyboards/admin.py
 
-from aiogram.filters import Command
-from aiogram.types import Message
-from core.config import API_BASE_URL
-import httpx
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from bot.callback_factories.admin import AdminCallback
 
 
-@router.message(Command("credit"), AdminFilter())
-async def credit_user(message: Message):
-    parts = message.text.split()
+def admin_keyboard():
 
-    if len(parts) != 3:
-        await message.answer(
-            "Usage: /credit <telegram_id> <amount>\n"
-            "Example: /credit 123456789 5000"
-        )
-        return
+    kb = InlineKeyboardBuilder()
 
-    try:
-        telegram_id = int(parts[1])
-        amount = float(parts[2])
-    except ValueError:
-        await message.answer("❌ Invalid telegram_id or amount.")
-        return
+    kb.button(
+        text="👥 Users",
+        callback_data=AdminCallback(action="users").pack()
+    )
 
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{API_BASE_URL}/api/admin/credit",
-                json={
-                    "telegram_id": telegram_id,
-                    "amount": amount
-                }
-            )
-            response.raise_for_status()
-            data = response.json()
+    kb.button(
+        text="📦 Orders",
+        callback_data=AdminCallback(action="orders").pack()
+    )
 
-        await message.answer(
-            f"✅ <b>User Credited</b>\n\n"
-            f"🆔 Telegram ID: <code>{telegram_id}</code>\n"
-            f"💰 Amount: ₦{amount:,.2f}\n"
-            f"💳 New Balance: ₦{data['new_balance']:,.2f}",
-            parse_mode="HTML"
-        )
+    kb.button(
+        text="💰 Revenue",
+        callback_data=AdminCallback(action="revenue").pack()
+    )
 
-        # Notify user
-        await message.bot.send_message(
-            chat_id=telegram_id,
-            text=(
-                f"✅ <b>Wallet Credited</b>\n\n"
-                f"₦{amount:,.2f} has been added to your wallet.\n"
-                f"💳 New Balance: ₦{data['new_balance']:,.2f}"
-            ),
-            parse_mode="HTML"
-        )
+    kb.adjust(1)
 
-    except Exception as e:
-        logger.error(f"Credit user failed: {e}")
-        await message.answer("❌ Failed to credit user. Please try again.")
+    return kb.as_markup()
