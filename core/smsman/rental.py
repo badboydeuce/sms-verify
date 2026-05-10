@@ -12,15 +12,20 @@ class SMSManRental:
 
     @staticmethod
     async def get_limits(country_id, rent_type, time):
+        params = {
+            "token": TOKEN,
+            "type": rent_type,
+            "time": str(time)
+        }
+
+        # ✅ Only add country_id if provided
+        if country_id:
+            params["country_id"] = str(country_id)
+
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{BASE_URL}/limits",
-                params={
-                    "token": TOKEN,
-                    "country_id": str(country_id),
-                    "type": rent_type,
-                    "time": str(time)      # ✅ must be string
-                }
+                params=params
             )
             print(f"RENTAL LIMITS: {response.status_code} {response.text}", flush=True)
             return response.json()
@@ -32,9 +37,9 @@ class SMSManRental:
                 f"{BASE_URL}/get-number",
                 params={
                     "token": TOKEN,
-                    "country_id": str(country_id),  # ✅ must be string
+                    "country_id": str(country_id),
                     "type": rent_type,
-                    "time": str(time)               # ✅ must be string
+                    "time": str(time)
                 }
             )
             print(f"RENTAL GET-NUMBER: {response.status_code} {response.text}", flush=True)
