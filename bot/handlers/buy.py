@@ -4,6 +4,10 @@ import logging
 from decimal import Decimal
 from asyncio import create_task
 
+from workers.rental_monitor import monitor_rental
+from bot.keyboards.orders import rental_order_keyboard
+
+
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
