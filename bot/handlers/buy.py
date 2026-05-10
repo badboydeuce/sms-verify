@@ -7,6 +7,7 @@ from asyncio import create_task
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.callback_factories.buy import BuyCallback
 from bot.states.buy import BuyStates
@@ -83,8 +84,6 @@ async def choose_type(callback: CallbackQuery, callback_data: BuyCallback):
 
 # ====================== RENTAL DURATION ======================
 async def _show_rental_duration(callback: CallbackQuery):
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
-
     kb = InlineKeyboardBuilder()
 
     durations = [
@@ -121,7 +120,7 @@ async def rental_duration_selected(
     callback: CallbackQuery,
     callback_data: BuyCallback
 ):
-    duration = callback_data.value  # e.g. "hour_1", "day_1"
+    duration = callback_data.value
 
     await callback.message.edit_text("⏳ Fetching countries...")
 
@@ -132,7 +131,6 @@ async def rental_duration_selected(
             await callback.message.edit_text("❌ No countries available.")
             return
 
-        from aiogram.utils.keyboard import InlineKeyboardBuilder
         kb = InlineKeyboardBuilder()
 
         for country in list(countries.values())[:40]:
@@ -143,6 +141,15 @@ async def rental_duration_selected(
                     value=f"{country['id']}_{duration}"
                 ).pack()
             )
+
+        # ✅ Search button
+        kb.button(
+            text="🔍 Search Country",
+            callback_data=BuyCallback(
+                action="rental_search_country",
+                value=duration
+            ).pack()
+        )
 
         kb.button(
             text="🔙 Back",
@@ -165,6 +172,66 @@ async def rental_duration_selected(
         await callback.answer()
 
 
+# ====================== RENTAL SEARCH COUNTRY ======================
+@router.callback_query(BuyCallback.filter(F.action == "rental_search_country"))
+async def rental_search_country_start(
+    callback: CallbackQuery,
+    callback_data: BuyCallback,
+    state: FSMContext
+):
+    await state.update_data(duration=callback_data.value)
+    await callback.message.answer(
+        "🔍 Type the country name to search:\nSend /cancel to go back."
+    )
+    await state.set_state(BuyStates.rental_search_country)
+    await callback.answer()
+
+
+@router.message(BuyStates.rental_search_country)
+async def rental_search_country_result(message: Message, state: FSMContext):
+    if message.text == "/cancel":
+        await state.clear()
+        await message.answer("❌ Search cancelled.")
+        return
+
+    search = message.text.strip()
+    data = await state.get_data()
+    duration = data.get("duration")
+    await state.clear()
+
+    countries = await SMSManService.get_countries()
+    filtered = [
+        c for c in countries.values()
+        if search.lower() in c["title"].lower()
+    ]
+
+    if not filtered:
+        await message.answer(
+            f"❌ No countries found for <b>{search}</b>. Try again.",
+            parse_mode="HTML"
+        )
+        return
+
+    kb = InlineKeyboardBuilder()
+
+    for country in filtered[:40]:
+        kb.button(
+            text=country["title"],
+            callback_data=BuyCallback(
+                action="rental_country",
+                value=f"{country['id']}_{duration}"
+            ).pack()
+        )
+
+    kb.adjust(2)
+
+    await message.answer(
+        f"🌍 <b>Results for \"{search}\":</b>",
+        reply_markup=kb.as_markup(),
+        parse_mode="HTML"
+    )
+
+
 # ====================== RENTAL COUNTRY SELECTED ======================
 @router.callback_query(BuyCallback.filter(F.action == "rental_country"))
 async def rental_country_selected(
@@ -172,10 +239,9 @@ async def rental_country_selected(
     callback_data: BuyCallback,
     db_user
 ):
-    # value = "country_id_rent_type_time" e.g. "103_hour_1"
     parts = callback_data.value.split("_", 1)
     country_id = parts[0]
-    duration = parts[1]  # e.g. "hour_1"
+    duration = parts[1]
 
     rent_type, time_str = duration.rsplit("_", 1)
     time = int(time_str)
@@ -186,12 +252,11 @@ async def rental_country_selected(
     )
 
     try:
-        # Get limits to find price
-        limits = await SMSManService.rent_number(country_id, rent_type, time)
+        limits_data = await SMSManService.get_rental_limits(country_id, rent_type, time)
 
-        if "error_code" in limits:
+        if "error_code" in limits_data:
             await processing_message.edit_text(
-                f"❌ Rental unavailable: {limits.get('error_msg', 'Unknown error')}"
+                f"❌ Rental unavailable: {limits_data.get('error_msg', 'Unknown error')}"
             )
             return
 
@@ -201,8 +266,6 @@ async def rental_country_selected(
             "Unknown"
         )
 
-        # Get price from limits API
-        limits_data = await SMSManService.get_rental_limits(country_id, rent_type, time)
         base_price = Decimal(str(limits_data.get("cost", 0)))
         final_price = Decimal(str(SMSManService.apply_markup(float(base_price))))
 
