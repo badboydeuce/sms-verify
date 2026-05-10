@@ -1,7 +1,9 @@
+# core/smsman/rental.py
+
 import httpx
 import os
 
-BASE_URL = "https://api.sms-man.com/control/rent-api"
+BASE_URL = "https://api.sms-man.com/rent-api"  # ✅ fixed URL
 
 TOKEN = os.getenv("SMSMAN_TOKEN")
 
@@ -10,9 +12,7 @@ class SMSManRental:
 
     @staticmethod
     async def get_limits(country_id, rent_type, time):
-
         async with httpx.AsyncClient() as client:
-
             response = await client.get(
                 f"{BASE_URL}/limits",
                 params={
@@ -22,14 +22,12 @@ class SMSManRental:
                     "time": time
                 }
             )
-
+            print(f"RENTAL LIMITS: {response.status_code} {response.text}", flush=True)
             return response.json()
 
     @staticmethod
     async def get_number(country_id, rent_type, time):
-
         async with httpx.AsyncClient() as client:
-
             response = await client.get(
                 f"{BASE_URL}/get-number",
                 params={
@@ -39,14 +37,11 @@ class SMSManRental:
                     "time": time
                 }
             )
-
             return response.json()
 
     @staticmethod
     async def get_sms(request_id):
-
         async with httpx.AsyncClient() as client:
-
             response = await client.get(
                 f"{BASE_URL}/get-sms",
                 params={
@@ -54,14 +49,11 @@ class SMSManRental:
                     "request_id": request_id
                 }
             )
-
             return response.json()
 
     @staticmethod
     async def get_all_sms(request_id):
-
         async with httpx.AsyncClient() as client:
-
             response = await client.get(
                 f"{BASE_URL}/get-all-sms",
                 params={
@@ -69,5 +61,4 @@ class SMSManRental:
                     "request_id": request_id
                 }
             )
-
             return response.json()
