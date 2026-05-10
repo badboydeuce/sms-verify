@@ -66,9 +66,7 @@ async def choose_type(callback: CallbackQuery, callback_data: BuyCallback):
             )
 
         elif service_type == "rental":
-            await callback.message.edit_text(
-                "♻️ Rental numbers coming next...\n\nChoose:\n• Hour\n• Day\n• Week\n• Month"
-            )
+            await _show_rental_duration(callback)
 
         elif service_type == "compatible":
             await callback.message.edit_text(
@@ -77,7 +75,168 @@ async def choose_type(callback: CallbackQuery, callback_data: BuyCallback):
 
     except Exception as e:
         logger.error(f"choose_type failed: {e}")
+        await callback.message.edit_text("⚠️ Failed to load options.")
+
+    finally:
+        await callback.answer()
+
+
+# ====================== RENTAL DURATION ======================
+async def _show_rental_duration(callback: CallbackQuery):
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+    kb = InlineKeyboardBuilder()
+
+    durations = [
+        ("1 Hour", "hour_1"),
+        ("4 Hours", "hour_4"),
+        ("1 Day", "day_1"),
+        ("1 Week", "week_1"),
+        ("1 Month", "month_1"),
+    ]
+
+    for label, value in durations:
+        kb.button(
+            text=label,
+            callback_data=BuyCallback(action="rental_duration", value=value).pack()
+        )
+
+    kb.button(
+        text="🔙 Back",
+        callback_data=BuyCallback(action="type", value="activation").pack()
+    )
+
+    kb.adjust(2)
+
+    await callback.message.edit_text(
+        "♻️ <b>Rent Number</b>\n\nSelect rental duration:",
+        reply_markup=kb.as_markup(),
+        parse_mode="HTML"
+    )
+
+
+# ====================== RENTAL DURATION SELECTED ======================
+@router.callback_query(BuyCallback.filter(F.action == "rental_duration"))
+async def rental_duration_selected(
+    callback: CallbackQuery,
+    callback_data: BuyCallback
+):
+    duration = callback_data.value  # e.g. "hour_1", "day_1"
+
+    await callback.message.edit_text("⏳ Fetching countries...")
+
+    try:
+        countries = await SMSManService.get_countries()
+
+        if not countries:
+            await callback.message.edit_text("❌ No countries available.")
+            return
+
+        from aiogram.utils.keyboard import InlineKeyboardBuilder
+        kb = InlineKeyboardBuilder()
+
+        for country in list(countries.values())[:40]:
+            kb.button(
+                text=country["title"],
+                callback_data=BuyCallback(
+                    action="rental_country",
+                    value=f"{country['id']}_{duration}"
+                ).pack()
+            )
+
+        kb.button(
+            text="🔙 Back",
+            callback_data=BuyCallback(action="type", value="rental").pack()
+        )
+
+        kb.adjust(2)
+
+        await callback.message.edit_text(
+            "🌍 <b>Select Country</b>\n\nChoose country for rental number.",
+            reply_markup=kb.as_markup(),
+            parse_mode="HTML"
+        )
+
+    except Exception as e:
+        logger.error(f"rental_duration_selected failed: {e}")
         await callback.message.edit_text("⚠️ Failed to fetch countries.")
+
+    finally:
+        await callback.answer()
+
+
+# ====================== RENTAL COUNTRY SELECTED ======================
+@router.callback_query(BuyCallback.filter(F.action == "rental_country"))
+async def rental_country_selected(
+    callback: CallbackQuery,
+    callback_data: BuyCallback,
+    db_user
+):
+    # value = "country_id_rent_type_time" e.g. "103_hour_1"
+    parts = callback_data.value.split("_", 1)
+    country_id = parts[0]
+    duration = parts[1]  # e.g. "hour_1"
+
+    rent_type, time_str = duration.rsplit("_", 1)
+    time = int(time_str)
+
+    processing_message = await callback.message.edit_text(
+        "⏳ <b>Processing Rental...</b>\n\nPlease wait while we get your rental number.",
+        parse_mode="HTML"
+    )
+
+    try:
+        # Get limits to find price
+        limits = await SMSManService.rent_number(country_id, rent_type, time)
+
+        if "error_code" in limits:
+            await processing_message.edit_text(
+                f"❌ Rental unavailable: {limits.get('error_msg', 'Unknown error')}"
+            )
+            return
+
+        countries = await SMSManService.get_countries()
+        country_name = next(
+            (c["title"] for c in countries.values() if str(c["id"]) == str(country_id)),
+            "Unknown"
+        )
+
+        # Get price from limits API
+        limits_data = await SMSManService.get_rental_limits(country_id, rent_type, time)
+        base_price = Decimal(str(limits_data.get("cost", 0)))
+        final_price = Decimal(str(SMSManService.apply_markup(float(base_price))))
+
+        async with AsyncSessionLocal() as db:
+            order = await OrderService.create_rental_order(
+                db=db,
+                user_id=db_user.id,
+                country_id=country_id,
+                country_name=country_name,
+                rent_type=rent_type,
+                time=time,
+                price=final_price
+            )
+
+        await processing_message.edit_text(
+            f"<b>✅ Rental Number Purchased</b>\n\n"
+            f"📱 Number:\n<code>{order.number}</code>\n\n"
+            f"🌍 Country:\n{order.country_name}\n\n"
+            f"⏱ Duration:\n{order.rental_duration}\n\n"
+            f"💰 Cost:\n₦{order.cost}\n\n"
+            f"📩 SMS will appear here as they arrive.",
+            parse_mode="HTML"
+        )
+
+    except InsufficientBalance:
+        await processing_message.edit_text(
+            "❌ Insufficient balance.\n\nPlease fund your wallet first."
+        )
+
+    except Exception as e:
+        logger.error(f"rental_country_selected failed: {e}")
+        await processing_message.edit_text(
+            "❌ Rental failed. Please try again."
+        )
 
     finally:
         await callback.answer()
@@ -257,7 +416,6 @@ async def buy_service(
             await processing_message.edit_text("❌ Service unavailable.")
             return
 
-        # ✅ Apply markup only once here
         base_price = Decimal(str(selected_service["price"]))
         final_price = Decimal(str(SMSManService.apply_markup(float(base_price))))
 
@@ -275,7 +433,7 @@ async def buy_service(
                 country_name=country_name,
                 service_id=service_id,
                 service_name=selected_service["application"],
-                price=final_price  # ✅ already marked up, no further markup
+                price=final_price
             )
 
         msg = await processing_message.edit_text(
@@ -321,6 +479,7 @@ async def buy_service(
 
     finally:
         await callback.answer()
+
 
 # ====================== MAIN MENU ======================
 @router.callback_query(F.data == "main_menu")
