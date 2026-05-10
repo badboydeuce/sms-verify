@@ -254,9 +254,24 @@ async def rental_country_selected(
     try:
         limits_data = await SMSManService.get_rental_limits(country_id, rent_type, time)
 
-        if "error_code" in limits_data:
+        print(f"RENTAL LIMITS: {limits_data}", flush=True)
+
+        if not limits_data or "error_code" in limits_data:
             await processing_message.edit_text(
-                f"❌ Rental unavailable: {limits_data.get('error_msg', 'Unknown error')}"
+                "❌ Rental unavailable for this country."
+            )
+            return
+
+        # ✅ limits returns a list — find the matching country
+        limits_list = limits_data.get("limits", [])
+        country_limit = next(
+            (l for l in limits_list if str(l["country_id"]) == str(country_id)),
+            None
+        )
+
+        if not country_limit or int(country_limit.get("count", 0)) == 0:
+            await processing_message.edit_text(
+                "❌ No rental numbers available for this country."
             )
             return
 
@@ -266,7 +281,7 @@ async def rental_country_selected(
             "Unknown"
         )
 
-        base_price = Decimal(str(limits_data.get("cost", 0)))
+        base_price = Decimal(str(country_limit["cost"]))   # ✅ from limits list
         final_price = Decimal(str(SMSManService.apply_markup(float(base_price))))
 
         async with AsyncSessionLocal() as db:
@@ -303,6 +318,7 @@ async def rental_country_selected(
 
     finally:
         await callback.answer()
+
 
 
 # ====================== SEARCH COUNTRY ======================
