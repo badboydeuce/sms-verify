@@ -121,45 +121,65 @@ async def rental_duration_selected(
     callback_data: BuyCallback
 ):
     duration = callback_data.value
+    rent_type, time_str = duration.rsplit("_", 1)
+    time = int(time_str)
 
-    await callback.message.edit_text("⏳ Fetching countries...")
+    await callback.message.edit_text("⏳ Fetching available countries...")
 
     try:
-        countries = await SMSManService.get_countries()
+        # ✅ Call limits with no country_id to get all available countries
+        limits_data = await SMSManService.get_rental_limits(
+            country_id="",
+            rent_type=rent_type,
+            time=time
+        )
 
-        if not countries:
-            await callback.message.edit_text("❌ No countries available.")
+        print(f"RENTAL LIMITS ALL: {limits_data}", flush=True)
+
+        if not limits_data or "error_code" in limits_data:
+            await callback.message.edit_text("❌ No rental countries available.")
             return
+
+        # ✅ Filter only countries with count > 0
+        available = [
+            l for l in limits_data.get("limits", [])
+            if int(l.get("count", 0)) > 0
+        ]
+
+        if not available:
+            await callback.message.edit_text(
+                "❌ No rental numbers available for this duration."
+            )
+            return
+
+        # Get country names
+        countries = await SMSManService.get_countries()
 
         kb = InlineKeyboardBuilder()
 
-        for country in list(countries.values())[:40]:
+        for limit in available:
+            cid = str(limit["country_id"])
+            country = countries.get(cid)
+            name = country["title"] if country else f"Country {cid}"
+            cost = Decimal(str(SMSManService.apply_rental_markup(float(limit["cost"]))))
+
             kb.button(
-                text=country["title"],
+                text=f"{name} — ₦{cost}",
                 callback_data=BuyCallback(
                     action="rental_country",
-                    value=f"{country['id']}_{duration}"
+                    value=f"{cid}_{duration}"
                 ).pack()
             )
-
-        # ✅ Search button
-        kb.button(
-            text="🔍 Search Country",
-            callback_data=BuyCallback(
-                action="rental_search_country",
-                value=duration
-            ).pack()
-        )
 
         kb.button(
             text="🔙 Back",
             callback_data=BuyCallback(action="type", value="rental").pack()
         )
 
-        kb.adjust(2)
+        kb.adjust(1)
 
         await callback.message.edit_text(
-            "🌍 <b>Select Country</b>\n\nChoose country for rental number.",
+            f"🌍 <b>Available Countries</b>\n\nShowing countries with rental numbers for your selected duration.",
             reply_markup=kb.as_markup(),
             parse_mode="HTML"
         )
@@ -170,7 +190,6 @@ async def rental_duration_selected(
 
     finally:
         await callback.answer()
-
 
 # ====================== RENTAL SEARCH COUNTRY ======================
 @router.callback_query(BuyCallback.filter(F.action == "rental_search_country"))
