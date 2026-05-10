@@ -67,7 +67,25 @@ async def get_crypto_rate(coingecko_id: str) -> float:
             data = response.json()
             return float(data[coingecko_id]["ngn"])
     except Exception as e:
-        logger.error(f"Failed to fetch crypto rate: {e}")
+        logger.error(f"Failed to fetch NGN rate: {e}")
+        return 0.0
+
+
+async def get_crypto_rate_usd(coingecko_id: str) -> float:
+    """Fetch live USD rate from CoinGecko."""
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(
+                "https://api.coingecko.com/api/v3/simple/price",
+                params={
+                    "ids": coingecko_id,
+                    "vs_currencies": "usd"
+                }
+            )
+            data = response.json()
+            return float(data[coingecko_id]["usd"])
+    except Exception as e:
+        logger.error(f"Failed to fetch USD rate: {e}")
         return 0.0
 
 
@@ -202,13 +220,21 @@ async def show_crypto_address(
         await callback.answer("Invalid coin selected.", show_alert=True)
         return
 
-    # Fetch live rate
-    rate = await get_crypto_rate(coin["coingecko_id"])
+    # Fetch live rates
+    rate_ngn = await get_crypto_rate(coin["coingecko_id"])
+    rate_usd = await get_crypto_rate_usd(coin["coingecko_id"])
 
-    rate_text = f"📈 1 {coin['symbol']} = ₦{rate:,.2f}" if rate else "📈 Rate unavailable"
+    # Calculate $10 minimum in NGN
+    usd_to_ngn = rate_ngn / rate_usd if rate_usd else 0
+    min_ngn = round(10 * usd_to_ngn, 2)
 
-    # Store coin in state
-    await state.update_data(coin_key=coin_key)
+    rate_text = f"📈 1 {coin['symbol']} = ₦{rate_ngn:,.2f}" if rate_ngn else "📈 Rate unavailable"
+    min_text = f"≈ ₦{min_ngn:,.2f}" if min_ngn else ""
+
+    await state.update_data(
+        coin_key=coin_key,
+        min_ngn=min_ngn
+    )
     await state.set_state(WalletStates.crypto_amount)
 
     await callback.message.answer(
@@ -216,9 +242,10 @@ async def show_crypto_address(
         f"Send your crypto to the address below:\n\n"
         f"🔗 Network: <b>{coin['network']}</b>\n"
         f"📋 Address:\n<code>{coin['address']}</code>\n\n"
-        f"{rate_text}\n\n"
-        f"Please enter the <b>NGN amount</b> you want to fund:\n"
-        f"• Minimum: ₦1,500\n\n"
+        f"{rate_text}\n"
+        f"⚠️ Minimum: <b>$10</b> ({min_text})\n"
+        f"⚠️ Network fees paid by you\n\n"
+        f"Please enter the <b>NGN amount</b> you want to fund:\n\n"
         f"Send /cancel to cancel.",
         reply_markup=crypto_confirm_keyboard(),
         parse_mode="HTML"
@@ -239,19 +266,28 @@ async def process_crypto_amount(message: Message, state: FSMContext):
     try:
         amount = float(raw)
     except ValueError:
-        await message.answer("⚠️ Invalid amount. Please enter a number e.g. <b>2000</b>", parse_mode="HTML")
-        return
-
-    if amount < 1500:
-        await message.answer("⚠️ Minimum funding amount is ₦1,500.")
+        await message.answer(
+            "⚠️ Invalid amount. Please enter a number e.g. <b>2000</b>",
+            parse_mode="HTML"
+        )
         return
 
     data = await state.get_data()
     coin_key = data.get("coin_key")
+    min_ngn = data.get("min_ngn", 0)
     coin = CRYPTO_WALLETS.get(coin_key)
 
-    rate = await get_crypto_rate(coin["coingecko_id"])
-    crypto_amount = amount / rate if rate else 0
+    # Validate $10 minimum
+    if amount < min_ngn:
+        await message.answer(
+            f"⚠️ Minimum crypto funding is <b>$10</b> (≈ ₦{min_ngn:,.2f}).\n"
+            f"Please enter a higher amount.",
+            parse_mode="HTML"
+        )
+        return
+
+    rate_ngn = await get_crypto_rate(coin["coingecko_id"])
+    crypto_amount = amount / rate_ngn if rate_ngn else 0
 
     await state.update_data(ngn_amount=amount, crypto_amount=crypto_amount)
     await state.set_state(WalletStates.crypto_tx_hash)
@@ -261,7 +297,8 @@ async def process_crypto_amount(message: Message, state: FSMContext):
         f"NGN Amount: ₦{amount:,.2f}\n"
         f"Crypto Amount: <b>{crypto_amount:.8f} {coin['symbol']}</b>\n"
         f"Network: {coin['network']}\n\n"
-        f"📋 Send to:\n<code>{coin['address']}</code>\n\n"
+        f"📋 Send exactly to:\n<code>{coin['address']}</code>\n\n"
+        f"⚠️ Network fees are paid by you on top of this amount.\n\n"
         f"After sending, please enter your <b>transaction hash/ID</b> below so admin can verify:",
         parse_mode="HTML"
     )
