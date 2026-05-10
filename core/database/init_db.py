@@ -6,8 +6,7 @@ from core.database.base import Base
 from core.models.user import User
 from core.models.order import Order
 from core.models.transaction import Transaction
-# ❌ Remove this line — file no longer exists
-# from core.models.payment_transaction import PaymentTransaction
+from core.models.rental_sms import RentalSMS  # ✅ added
 
 
 async def init_db():
