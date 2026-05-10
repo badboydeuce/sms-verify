@@ -3,7 +3,7 @@
 import httpx
 import os
 
-BASE_URL = "https://api.sms-man.com/rent-api"  # ✅ fixed URL
+BASE_URL = "https://api.sms-man.com/rent-api"
 
 TOKEN = os.getenv("SMSMAN_TOKEN")
 
@@ -17,9 +17,9 @@ class SMSManRental:
                 f"{BASE_URL}/limits",
                 params={
                     "token": TOKEN,
-                    "country_id": country_id,
+                    "country_id": str(country_id),
                     "type": rent_type,
-                    "time": time
+                    "time": str(time)      # ✅ must be string
                 }
             )
             print(f"RENTAL LIMITS: {response.status_code} {response.text}", flush=True)
@@ -32,11 +32,12 @@ class SMSManRental:
                 f"{BASE_URL}/get-number",
                 params={
                     "token": TOKEN,
-                    "country_id": country_id,
+                    "country_id": str(country_id),  # ✅ must be string
                     "type": rent_type,
-                    "time": time
+                    "time": str(time)               # ✅ must be string
                 }
             )
+            print(f"RENTAL GET-NUMBER: {response.status_code} {response.text}", flush=True)
             return response.json()
 
     @staticmethod
@@ -46,7 +47,7 @@ class SMSManRental:
                 f"{BASE_URL}/get-sms",
                 params={
                     "token": TOKEN,
-                    "request_id": request_id
+                    "request_id": str(request_id)
                 }
             )
             return response.json()
@@ -58,7 +59,7 @@ class SMSManRental:
                 f"{BASE_URL}/get-all-sms",
                 params={
                     "token": TOKEN,
-                    "request_id": request_id
+                    "request_id": str(request_id)
                 }
             )
             return response.json()
