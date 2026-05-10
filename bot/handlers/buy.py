@@ -298,7 +298,7 @@ async def rental_country_selected(
         )
 
         base_price = Decimal(str(country_limit["cost"]))
-        final_price = Decimal(str(SMSManService.apply_rental_markup(float(base_price))))  # ✅
+        final_price = Decimal(str(SMSManService.apply_rental_markup(float(base_price))))
 
         async with AsyncSessionLocal() as db:
             order = await OrderService.create_rental_order(
@@ -311,14 +311,25 @@ async def rental_country_selected(
                 price=final_price
             )
 
-        await processing_message.edit_text(
+        msg = await processing_message.edit_text(
             f"<b>✅ Rental Number Purchased</b>\n\n"
             f"📱 Number:\n<code>{order.number}</code>\n\n"
             f"🌍 Country:\n{order.country_name}\n\n"
             f"⏱ Duration:\n{order.rental_duration}\n\n"
             f"💰 Cost:\n₦{order.cost}\n\n"
-            f"📩 SMS will appear here as they arrive.",
+            f"📩 Monitoring for SMS every 30 seconds...",
+            reply_markup=rental_order_keyboard(order.id),  # ✅ added keyboard
             parse_mode="HTML"
+        )
+
+        # ✅ Start rental SMS monitor
+        create_task(
+            monitor_rental(
+                bot=callback.bot,
+                order_id=order.id,
+                chat_id=callback.message.chat.id,
+                message_id=msg.message_id
+            )
         )
 
     except InsufficientBalance:
