@@ -1,7 +1,7 @@
 # bot/handlers/orders.py
 
+import asyncio
 import logging
-from asyncio import create_task
 from datetime import datetime
 
 from aiogram import Router, F
@@ -12,13 +12,48 @@ from bot.callback_factories.orders import OrderCallback
 from bot.keyboards.orders import activation_order_keyboard, rental_order_keyboard
 from core.database.session import AsyncSessionLocal
 from core.models.order import Order
+from core.models.rental_sms import RentalSMS
 from core.services.order_service import OrderService
 from core.services.smsman_service import SMSManService
-from workers.rental_monitor import monitor_rental
 
 logger = logging.getLogger(__name__)
 
 router = Router()
+
+
+def _format_single_order(order, sms_list=None):
+    status_emoji = {
+        "PENDING": "⏳",
+        "RECEIVED": "✅",
+        "CANCELLED": "❌",
+        "EXPIRED": "⏰",
+        "COMPLETED": "✅",
+        "ACTIVE": "🟢"
+    }.get(order.status, "❓")
+
+    text = (
+        f"{status_emoji} <b>{order.service_name}</b>\n"
+        f"📱 <code>{order.number}</code>\n"
+        f"🌍 {order.country_name}\n"
+        f"💰 ₦{order.cost}\n"
+        f"📅 {order.created_at.strftime('%d %b %Y %H:%M')}\n"
+    )
+
+    if order.order_type == "ACTIVATION":
+        if order.otp_code:
+            text += f"🔑 OTP: <code>{order.otp_code}</code>\n"
+
+    if order.order_type == "RENTAL":
+        text += f"⏱ {order.rental_duration}\n"
+        if sms_list:
+            text += "\n" + "\n——————\n".join(
+                f"💬 Message: {sms.message}\n🕐 Timestamp: {sms.received_at}"
+                for sms in sms_list
+            )
+        else:
+            text += "\n⏳ No SMS yet."
+
+    return text
 
 
 # ====================== ORDERS MENU ======================
@@ -29,7 +64,7 @@ async def orders_menu(callback: CallbackQuery, db_user):
             select(Order)
             .where(Order.user_id == db_user.id)
             .order_by(Order.created_at.desc())
-            .limit(10)
+            .limit(5)  # ✅ last 5 orders
         )
         orders = result.scalars().all()
 
@@ -43,30 +78,20 @@ async def orders_menu(callback: CallbackQuery, db_user):
 
     text = "<b>📋 My Orders</b>\n\n"
 
-    for order in orders:
-        status_emoji = {
-            "PENDING": "⏳",
-            "RECEIVED": "✅",
-            "CANCELLED": "❌",
-            "EXPIRED": "⏰",
-            "COMPLETED": "✅"
-        }.get(order.status, "❓")
+    async with AsyncSessionLocal() as db:
+        for order in orders:
+            sms_list = None
 
-        text += (
-            f"{status_emoji} <b>{order.service_name}</b>\n"
-            f"📱 <code>{order.number}</code>\n"
-            f"🌍 {order.country_name}\n"
-            f"💰 ₦{order.cost}\n"
-            f"📅 {order.created_at.strftime('%d %b %Y %H:%M')}\n"
-        )
+            if order.order_type == "RENTAL":
+                sms_result = await db.execute(
+                    select(RentalSMS)
+                    .where(RentalSMS.order_id == order.id)
+                    .order_by(RentalSMS.created_at.asc())
+                )
+                sms_list = sms_result.scalars().all()
 
-        if order.order_type == "ACTIVATION" and order.otp_code:
-            text += f"🔑 OTP: <code>{order.otp_code}</code>\n"
-
-        if order.order_type == "RENTAL" and order.rental_duration:
-            text += f"⏱ Duration: {order.rental_duration}\n"
-
-        text += "\n==============\n\n"
+            text += _format_single_order(order, sms_list)
+            text += "\n==============\n\n"
 
     await callback.message.edit_text(
         text,
@@ -159,38 +184,33 @@ async def check_rental_sms(
             await callback.answer("Order not found.", show_alert=True)
             return
 
-    try:
-        response = await SMSManService.get_rental_sms(order.request_id)
-        sms_list = response.get("sms", [])
-
-        if isinstance(sms_list, dict):
-            sms_list = [sms_list]
-
-        if not sms_list:
-            await callback.answer("No SMS received yet.", show_alert=False)
-            return
-
-        sms_text = "\n==============\n".join(
-            f"📩 {sms['message']}\n🕐 {sms.get('time', '')}"
-            for sms in sms_list
-            if sms.get("message")
+        sms_result = await db.execute(
+            select(RentalSMS)
+            .where(RentalSMS.order_id == order_id)
+            .order_by(RentalSMS.created_at.asc())
         )
+        sms_list = sms_result.scalars().all()
 
-        await callback.message.edit_text(
-            f"<b>♻️ Rental Number</b>\n\n"
-            f"📱 Number:\n<code>{order.number}</code>\n\n"
-            f"🌍 Country: {order.country_name}\n"
-            f"⏱ Duration: {order.rental_duration}\n\n"
-            f"<b>📨 Messages:</b>\n\n"
-            f"{sms_text}",
-            reply_markup=rental_order_keyboard(order.id),
-            parse_mode="HTML"
-        )
+    if not sms_list:
+        await callback.answer("No SMS received yet.", show_alert=False)
+        await callback.answer()
+        return
 
-    except Exception as e:
-        logger.error(f"check_rental_sms failed: {e}")
-        await callback.answer("Failed to fetch SMS.", show_alert=True)
+    sms_text = "\n——————\n".join(
+        f"💬 Message: {sms.message}\n🕐 Timestamp: {sms.received_at}"
+        for sms in sms_list
+    )
 
+    await callback.message.edit_text(
+        f"<b>♻️ Rental Number</b>\n\n"
+        f"📱 Number:\n<code>{order.number}</code>\n\n"
+        f"🌍 Country: {order.country_name}\n"
+        f"⏱ Duration: {order.rental_duration}\n\n"
+        f"<b>📨 Messages:</b>\n\n"
+        f"{sms_text}",
+        reply_markup=rental_order_keyboard(order.id),
+        parse_mode="HTML"
+    )
     await callback.answer()
 
 
