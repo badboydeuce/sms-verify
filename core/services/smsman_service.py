@@ -6,7 +6,7 @@ from core.smsman.rental import SMSManRental
 
 class SMSManService:
 
-    MARKUP_PERCENT = 1500
+    MARKUP_PERCENT = 2500
     RENTAL_MARKUP_PERCENT = 2500
 
     @staticmethod
