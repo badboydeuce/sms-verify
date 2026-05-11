@@ -1,7 +1,13 @@
+# core/smsman/activation.py
+
+import asyncio
 import httpx
 import os
 
 BASE_URL = "https://api.sms-man.com/control"
+
+MAX_RETRIES = 3
+RETRY_DELAY = 1
 
 
 class SMSManActivation:
@@ -14,82 +20,82 @@ class SMSManActivation:
         return token
 
     @staticmethod
+    async def _get(url: str, params: dict) -> dict:
+        """Shared GET with retry logic."""
+        for attempt in range(MAX_RETRIES):
+            try:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    response = await client.get(url, params=params)
+                    response.raise_for_status()
+                    return response.json()
+            except (httpx.ReadError, httpx.RemoteProtocolError, httpx.ConnectError) as e:
+                if attempt == MAX_RETRIES - 1:
+                    raise
+                await asyncio.sleep(RETRY_DELAY)
+        return {}
+
+    @staticmethod
     async def get_balance():
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(
-                f"{BASE_URL}/get-balance",
-                params={"token": SMSManActivation._token()}
-            )
-            response.raise_for_status()
-            return response.json()
+        return await SMSManActivation._get(
+            f"{BASE_URL}/get-balance",
+            {"token": SMSManActivation._token()}
+        )
 
     @staticmethod
     async def get_countries():
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(
-                f"{BASE_URL}/countries",
-                params={"token": SMSManActivation._token()}
-            )
-            response.raise_for_status()
-            return response.json()
+        return await SMSManActivation._get(
+            f"{BASE_URL}/countries",
+            {"token": SMSManActivation._token()}
+        )
 
     @staticmethod
     async def get_services():
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(
-                f"{BASE_URL}/applications",
-                params={"token": SMSManActivation._token()}
-            )
-            response.raise_for_status()
-            return response.json()
+        return await SMSManActivation._get(
+            f"{BASE_URL}/applications",
+            {"token": SMSManActivation._token()}
+        )
 
     @staticmethod
     async def get_prices(country_id: int):
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(
-                f"{BASE_URL}/get-prices",
-                params={"token": SMSManActivation._token(), "country_id": country_id}
-            )
-            response.raise_for_status()
-            return response.json()
+        return await SMSManActivation._get(
+            f"{BASE_URL}/get-prices",
+            {
+                "token": SMSManActivation._token(),
+                "country_id": country_id
+            }
+        )
 
     @staticmethod
     async def get_number(country_id: int, application_id: int):
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(
-                f"{BASE_URL}/get-number",
-                params={
-                    "token": SMSManActivation._token(),
-                    "country_id": country_id,
-                    "application_id": application_id
-                }
-            )
-            response.raise_for_status()
-            return response.json()
+        return await SMSManActivation._get(
+            f"{BASE_URL}/get-number",
+            {
+                "token": SMSManActivation._token(),
+                "country_id": country_id,
+                "application_id": application_id
+            }
+        )
 
     @staticmethod
     async def get_sms(request_id: int):
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(
-                f"{BASE_URL}/get-sms",
-                params={"token": SMSManActivation._token(), "request_id": request_id}
-            )
-            response.raise_for_status()
-            return response.json()
+        return await SMSManActivation._get(
+            f"{BASE_URL}/get-sms",
+            {
+                "token": SMSManActivation._token(),
+                "request_id": request_id
+            }
+        )
 
     @staticmethod
     async def set_status(request_id: int, status: str):
         valid_statuses = {"ready", "close", "reject", "used"}
         if status not in valid_statuses:
             raise ValueError(f"Invalid status '{status}'. Must be one of {valid_statuses}")
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(
-                f"{BASE_URL}/set-status",
-                params={
-                    "token": SMSManActivation._token(),
-                    "request_id": request_id,
-                    "status": status
-                }
-            )
-            response.raise_for_status()
-            return response.json()
+        return await SMSManActivation._get(
+            f"{BASE_URL}/set-status",
+            {
+                "token": SMSManActivation._token(),
+                "request_id": request_id,
+                "status": status
+            }
+        )
