@@ -2,6 +2,7 @@
 
 import asyncio
 import httpx
+import json
 import os
 
 BASE_URL = "https://api.sms-man.com/control"
@@ -25,8 +26,9 @@ class SMSManActivation:
         for attempt in range(MAX_RETRIES):
             try:
                 async with httpx.AsyncClient(
-                    timeout=60,
-                    follow_redirects=True
+                    timeout=httpx.Timeout(60.0, connect=10.0),
+                    follow_redirects=True,
+                    http2=False
                 ) as client:
                     response = await client.get(url, params=params)
                     response.raise_for_status()
@@ -60,22 +62,22 @@ class SMSManActivation:
 
     @staticmethod
     async def get_prices(country_id: int):
-        """Use streaming to handle large price responses."""
+        """Use explicit timeout and no http2 to handle large price responses."""
         for attempt in range(MAX_RETRIES):
             try:
-                async with httpx.AsyncClient(timeout=60) as client:
-                    async with client.stream(
-                        "GET",
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(60.0, connect=10.0),
+                    http2=False
+                ) as client:
+                    response = await client.get(
                         f"{BASE_URL}/get-prices",
                         params={
                             "token": SMSManActivation._token(),
                             "country_id": country_id
                         }
-                    ) as response:
-                        response.raise_for_status()
-                        content = await response.aread()
-                        import json
-                        return json.loads(content)
+                    )
+                    response.raise_for_status()
+                    return response.json()
             except Exception as e:
                 if attempt == MAX_RETRIES - 1:
                     raise
