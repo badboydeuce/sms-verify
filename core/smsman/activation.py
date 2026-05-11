@@ -24,14 +24,17 @@ class SMSManActivation:
         """Shared GET with retry logic."""
         for attempt in range(MAX_RETRIES):
             try:
-                async with httpx.AsyncClient(timeout=30) as client:
+                async with httpx.AsyncClient(
+                    timeout=60,
+                    follow_redirects=True
+                ) as client:
                     response = await client.get(url, params=params)
                     response.raise_for_status()
                     return response.json()
-            except (httpx.ReadError, httpx.RemoteProtocolError, httpx.ConnectError) as e:
+            except Exception as e:
                 if attempt == MAX_RETRIES - 1:
                     raise
-                await asyncio.sleep(RETRY_DELAY)
+                await asyncio.sleep(RETRY_DELAY * (attempt + 1))
         return {}
 
     @staticmethod
@@ -57,13 +60,27 @@ class SMSManActivation:
 
     @staticmethod
     async def get_prices(country_id: int):
-        return await SMSManActivation._get(
-            f"{BASE_URL}/get-prices",
-            {
-                "token": SMSManActivation._token(),
-                "country_id": country_id
-            }
-        )
+        """Use streaming to handle large price responses."""
+        for attempt in range(MAX_RETRIES):
+            try:
+                async with httpx.AsyncClient(timeout=60) as client:
+                    async with client.stream(
+                        "GET",
+                        f"{BASE_URL}/get-prices",
+                        params={
+                            "token": SMSManActivation._token(),
+                            "country_id": country_id
+                        }
+                    ) as response:
+                        response.raise_for_status()
+                        content = await response.aread()
+                        import json
+                        return json.loads(content)
+            except Exception as e:
+                if attempt == MAX_RETRIES - 1:
+                    raise
+                await asyncio.sleep(RETRY_DELAY * (attempt + 1))
+        return {}
 
     @staticmethod
     async def get_number(country_id: int, application_id: int):
