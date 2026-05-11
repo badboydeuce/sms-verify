@@ -16,6 +16,20 @@ from core.exceptions.wallet import InsufficientBalance
 logger = logging.getLogger(__name__)
 
 
+def _calculate_rental_expiry(rent_type: str, time: int) -> datetime:
+    """Calculate expiry datetime based on rental type and duration."""
+    now = datetime.utcnow()
+    if rent_type == "hour":
+        return now + timedelta(hours=time)
+    elif rent_type == "day":
+        return now + timedelta(days=time)
+    elif rent_type == "week":
+        return now + timedelta(weeks=time)
+    elif rent_type == "month":
+        return now + timedelta(days=30 * time)
+    return now + timedelta(hours=time)  # fallback
+
+
 class OrderService:
 
     @staticmethod
@@ -28,7 +42,7 @@ class OrderService:
         service_name: str,
         price: Decimal
     ):
-        final_price = price  # ✅ markup already applied in handler
+        final_price = price
 
         reference = str(uuid4())
 
@@ -44,6 +58,8 @@ class OrderService:
             country_id,
             service_id
         )
+
+        logger.info(f"SMS-Man activation response: {smsman_response}")
 
         if "error_code" in smsman_response:
             error_code = smsman_response["error_code"]
@@ -102,7 +118,7 @@ class OrderService:
         time: int,
         price: Decimal
     ):
-        final_price = price  # ✅ markup already applied in handler
+        final_price = price
 
         reference = str(uuid4())
 
@@ -114,13 +130,53 @@ class OrderService:
             description="Rental number purchase"
         )
 
-        smsman_response = await SMSManService.rent_number(
-            country_id,
-            rent_type,
-            time
-        )
+        try:
+            smsman_response = await SMSManService.rent_number(
+                country_id,
+                rent_type,
+                time
+            )
 
-        if "error_code" in smsman_response:
+            print(f"RENTAL ORDER RESPONSE: {smsman_response}", flush=True)
+            logger.info(f"SMS-Man rental response: {smsman_response}")
+
+            if "error_code" in smsman_response:
+                raise SMSManAPIError(
+                    smsman_response.get("error_msg", "Rental failed")
+                )
+
+            if "balance" in smsman_response:
+                raise SMSManAPIError(
+                    smsman_response.get("balance", "Insufficient SMS-Man balance")
+                )
+
+            if "request_id" not in smsman_response or "number" not in smsman_response:
+                raise SMSManAPIError(
+                    f"Unexpected rental response: {smsman_response}"
+                )
+
+            order = Order(
+                user_id=user_id,
+                order_type="RENTAL",
+                service_id="rental",
+                service_name="Rental Number",
+                country_id=country_id,
+                country_name=country_name,
+                number=smsman_response["number"],
+                request_id=str(smsman_response["request_id"]),
+                cost=final_price,
+                status="PENDING",
+                rental_duration=f"{time} {rent_type}",
+                expires_at=_calculate_rental_expiry(rent_type, time)  # ✅ fixed
+            )
+
+            db.add(order)
+            await db.commit()
+            await db.refresh(order)
+
+            return order
+
+        except SMSManAPIError:
             await WalletService.credit_balance(
                 db=db,
                 user_id=user_id,
@@ -128,27 +184,21 @@ class OrderService:
                 reference=f"refund_{reference}",
                 description="Refund: rental number failed"
             )
-            raise SMSManAPIError(smsman_response.get("error_msg", "Rental failed"))
+            raise
 
-        order = Order(
-            user_id=user_id,
-            order_type="RENTAL",
-            service_id="rental",
-            service_name="Rental Number",
-            country_id=country_id,
-            country_name=country_name,
-            number=smsman_response["number"],
-            request_id=str(smsman_response["request_id"]),
-            cost=final_price,
-            status="PENDING",
-            rental_duration=f"{time} {rent_type}"
-        )
-
-        db.add(order)
-        await db.commit()
-        await db.refresh(order)
-
-        return order
+        except Exception as e:
+            logger.error(f"create_rental_order unexpected error: {e}")
+            try:
+                await WalletService.credit_balance(
+                    db=db,
+                    user_id=user_id,
+                    amount=final_price,
+                    reference=f"refund_{reference}",
+                    description="Refund: rental order creation failed"
+                )
+            except Exception as refund_error:
+                logger.error(f"Refund also failed: {refund_error}")
+            raise SMSManAPIError(f"Rental failed: {str(e)}")
 
     @staticmethod
     async def update_otp(
