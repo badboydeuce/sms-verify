@@ -398,6 +398,7 @@ async def search_country_result(message: Message, state: FSMContext):
 @router.callback_query(BuyCallback.filter(F.action == "country"))
 async def choose_country(callback: CallbackQuery, callback_data: BuyCallback):
     country_id = callback_data.value
+    await callback.answer()  # ✅ answer immediately
 
     await callback.message.edit_text("⏳ Fetching available services...")
 
@@ -434,10 +435,7 @@ async def choose_country(callback: CallbackQuery, callback_data: BuyCallback):
 
     except Exception as e:
         logger.error(f"choose_country failed: {e}")
-        await callback.message.edit_text("⚠️ Failed to fetch services.")
-
-    finally:
-        await callback.answer()
+        await callback.message.edit_text("⚠️ Failed to fetch services. Please try again.")
 
 
 # ====================== SEARCH SERVICE ======================
