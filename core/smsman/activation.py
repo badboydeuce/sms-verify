@@ -2,10 +2,10 @@
 
 import asyncio
 import httpx
-import json
 import os
 
 BASE_URL = "https://api.sms-man.com/control"
+API_BASE_URL = os.getenv("API_BASE_URL")
 
 MAX_RETRIES = 3
 RETRY_DELAY = 1
@@ -17,17 +17,15 @@ class SMSManActivation:
     def _token() -> str:
         token = os.getenv("SMSMAN_TOKEN")
         if not token:
-            raise ValueError("SMSMAN_TOKEN environment variable is not set")
+            raise ValueError("SMSMAN_TOKEN is not set")
         return token
 
     @staticmethod
     async def _get(url: str, params: dict) -> dict:
-        """Shared GET with retry logic."""
         for attempt in range(MAX_RETRIES):
             try:
                 async with httpx.AsyncClient(
                     timeout=httpx.Timeout(60.0, connect=10.0),
-                    follow_redirects=True,
                     http2=False
                 ) as client:
                     response = await client.get(url, params=params)
@@ -48,10 +46,20 @@ class SMSManActivation:
 
     @staticmethod
     async def get_countries():
-        return await SMSManActivation._get(
-            f"{BASE_URL}/countries",
-            {"token": SMSManActivation._token()}
-        )
+        # ✅ Route through API proxy
+        for attempt in range(MAX_RETRIES):
+            try:
+                async with httpx.AsyncClient(timeout=60) as client:
+                    response = await client.get(
+                        f"{API_BASE_URL}/api/smsman/countries"
+                    )
+                    response.raise_for_status()
+                    return response.json()
+            except Exception as e:
+                if attempt == MAX_RETRIES - 1:
+                    raise
+                await asyncio.sleep(RETRY_DELAY * (attempt + 1))
+        return {}
 
     @staticmethod
     async def get_services():
@@ -62,19 +70,12 @@ class SMSManActivation:
 
     @staticmethod
     async def get_prices(country_id: int):
-        """Use explicit timeout and no http2 to handle large price responses."""
+        # ✅ Route through API proxy
         for attempt in range(MAX_RETRIES):
             try:
-                async with httpx.AsyncClient(
-                    timeout=httpx.Timeout(60.0, connect=10.0),
-                    http2=False
-                ) as client:
+                async with httpx.AsyncClient(timeout=60) as client:
                     response = await client.get(
-                        f"{BASE_URL}/get-prices",
-                        params={
-                            "token": SMSManActivation._token(),
-                            "country_id": country_id
-                        }
+                        f"{API_BASE_URL}/api/smsman/prices/{country_id}"
                     )
                     response.raise_for_status()
                     return response.json()
@@ -109,7 +110,7 @@ class SMSManActivation:
     async def set_status(request_id: int, status: str):
         valid_statuses = {"ready", "close", "reject", "used"}
         if status not in valid_statuses:
-            raise ValueError(f"Invalid status '{status}'. Must be one of {valid_statuses}")
+            raise ValueError(f"Invalid status '{status}'.")
         return await SMSManActivation._get(
             f"{BASE_URL}/set-status",
             {
