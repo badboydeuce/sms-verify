@@ -39,7 +39,6 @@ async def get_prices(country_id: str):
                     max_connections=10
                 )
             ) as client:
-                # ✅ Use streaming to read chunked response
                 async with client.stream("GET", url, params=params) as response:
                     response.raise_for_status()
                     chunks = []
@@ -47,6 +46,12 @@ async def get_prices(country_id: str):
                         chunks.append(chunk)
                     raw = b"".join(chunks)
                     data = json.loads(raw)
+
+            # ✅ Debug — log first item structure
+            first_key = next(iter(data), None)
+            if first_key:
+                print(f"SMS-MAN RAW FIRST KEY: {first_key}", flush=True)
+                print(f"SMS-MAN RAW FIRST VALUE: {data[first_key]}", flush=True)
 
             _prices_cache[cache_key] = (now, data)
             return JSONResponse(content=data)
@@ -59,6 +64,7 @@ async def get_prices(country_id: str):
                 )
             import asyncio
             await asyncio.sleep(2 * (attempt + 1))
+
 
 
 @router.get("/api/smsman/countries")
