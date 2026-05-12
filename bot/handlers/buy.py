@@ -38,8 +38,8 @@ async def buy_menu(callback: CallbackQuery):
 
 Choose service type:
 
-• One-Time SMS
-• Rent Number
+- One-Time SMS
+- Rent Number
 """
     await callback.message.edit_text(text=text, reply_markup=buy_menu_keyboard())
     await callback.answer()
@@ -71,20 +71,18 @@ async def choose_type(callback: CallbackQuery, callback_data: BuyCallback):
         await callback.answer()
 
 
-# ====================== RENTAL (unchanged for now) ======================
+# ====================== RENTAL ======================
 async def _show_rental_duration(callback: CallbackQuery):
-    # ... (keep your existing rental duration code)
-    pass  # I'll update rental in next step if you want
+    pass
 
 
-# ====================== CHOOSE COUNTRY (Activation) - LIVE PRICING ======================
+# ====================== CHOOSE COUNTRY ======================
 @router.callback_query(BuyCallback.filter(F.action == "country"))
 async def choose_country(callback: CallbackQuery, callback_data: BuyCallback):
     country_id = callback_data.value
     await callback.message.edit_text("⏳ Fetching live prices...")
 
     try:
-        # ✅ LIVE prices with markup applied
         services = await SMSManService.get_prices_with_markup(country_id)
 
         if not services:
@@ -104,6 +102,52 @@ async def choose_country(callback: CallbackQuery, callback_data: BuyCallback):
         await callback.answer()
 
 
+# ====================== SEARCH SERVICE — PROMPT ======================
+@router.callback_query(BuyCallback.filter(F.action == "search_service"))
+async def search_service_prompt(callback: CallbackQuery, callback_data: BuyCallback, state: FSMContext):
+    country_id = callback_data.value
+    await state.update_data(country_id=country_id)
+    await state.set_state(BuyStates.search_service)  # ✅ was BuyStates.searching_service
+    await callback.message.edit_text(
+        "🔍 <b>Search Service</b>\n\nType the name of the service you're looking for:",
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+# ====================== SEARCH SERVICE — HANDLE INPUT ======================
+@router.message(BuyStates.search_service)  # ✅ was BuyStates.searching_service
+async def handle_search_input(message: Message, state: FSMContext):
+    data = await state.get_data()
+    country_id = data.get("country_id")
+    search_term = message.text.strip()
+
+    try:
+        services = await SMSManService.get_prices_with_markup(country_id)
+        filtered = [
+            s for s in services
+            if search_term.lower() in s["application"].lower()
+        ]
+
+        if not filtered:
+            await message.answer(
+                f"❌ No services found for <b>{search_term}</b>.\n\nTry a different keyword.",
+                parse_mode="HTML"
+            )
+            return
+
+        await message.answer(
+            f"📱 <b>Results for:</b> <i>{search_term}</i>",
+            reply_markup=services_keyboard(services, country_id, search=search_term),
+            parse_mode="HTML"
+        )
+
+    except Exception as e:
+        logger.error(f"handle_search_input failed: {e}")
+        await message.answer("⚠️ Search failed. Please try again.")
+    finally:
+        await state.clear()
+
 # ====================== BUY SERVICE ======================
 @router.callback_query(BuyCallback.filter(F.action == "service"))
 async def buy_service(callback: CallbackQuery, callback_data: BuyCallback, db_user):
@@ -115,7 +159,6 @@ async def buy_service(callback: CallbackQuery, callback_data: BuyCallback, db_us
     processing = await callback.message.edit_text("⏳ Processing your order...")
 
     try:
-        # Get live price again to be 100% sure
         services = await SMSManService.get_prices_with_markup(country_id)
         selected = next((s for s in services if str(s["application_id"]) == str(service_id)), None)
 
@@ -127,7 +170,7 @@ async def buy_service(callback: CallbackQuery, callback_data: BuyCallback, db_us
 
         countries = await SMSManService.get_countries()
         country_name = next(
-            (c["title"] for c in countries.values() if str(c["id"]) == str(country_id)), 
+            (c["title"] for c in countries.values() if str(c["id"]) == str(country_id)),
             "Unknown"
         )
 
@@ -144,7 +187,7 @@ async def buy_service(callback: CallbackQuery, callback_data: BuyCallback, db_us
 
         msg = await processing.edit_text(
             f"<b>✅ Number Purchased Successfully</b>\n\n"
-            f"📱 Number: <code>{{order.number}}</code>\n\n"
+            f"📱 Number: <code>{order.number}</code>\n\n"
             f"🌍 Country: {order.country_name}\n\n"
             f"📦 Service: {order.service_name}\n\n"
             f"💰 Price: ₦{order.cost}\n\n"

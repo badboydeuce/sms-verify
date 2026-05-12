@@ -5,28 +5,25 @@ from bot.callback_factories.buy import BuyCallback
 
 
 def services_keyboard(services, country_id, search: str = ""):
-
     kb = InlineKeyboardBuilder()
 
-    # Filter by search term if provided
     if search:
         filtered = [
             s for s in services
-            if search.lower() in s["name"].lower()
+            if search.lower() in s["application"].lower()  # ✅ was s["name"]
         ]
     else:
         filtered = services
 
     for service in filtered[:40]:
         kb.button(
-            text=f"{service['name']} ₦{service['price']}",
+            text=f"{service['application']} ₦{service['price']}",  # ✅ was service["name"]
             callback_data=BuyCallback(
                 action="service",
-                value=f"{country_id}_{service['id']}"
+                value=f"{country_id}_{service['application_id']}"  # ✅ was service["id"]
             ).pack()
         )
 
-    # Search button
     kb.button(
         text="🔍 Search Service",
         callback_data=BuyCallback(
@@ -41,5 +38,4 @@ def services_keyboard(services, country_id, search: str = ""):
     )
 
     kb.adjust(1)
-
     return kb.as_markup()
