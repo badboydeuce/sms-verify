@@ -4,8 +4,8 @@ from decimal import Decimal
 
 # ====================== MARKUP CONFIG ======================
 
-MARKUP_PERCENT = Decimal("50.0")        # 25% profit margin
-RENTAL_MARKUP_PERCENT = Decimal("50.0")
+MARKUP_PERCENT = Decimal("100.0")        # 25% profit margin
+RENTAL_MARKUP_PERCENT = Decimal("100.0")
 
 # ====================== HARDCODED FX ======================
 
