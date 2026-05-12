@@ -102,6 +102,50 @@ async def choose_country(callback: CallbackQuery, callback_data: BuyCallback):
         await callback.answer()
 
 
+# ====================== SEARCH COUNTRY — PROMPT ======================
+@router.callback_query(BuyCallback.filter(F.action == "search_country"))
+async def search_country_prompt(callback: CallbackQuery, callback_data: BuyCallback, state: FSMContext):
+    await state.set_state(BuyStates.search_country)
+    await callback.message.edit_text(
+        "🔍 <b>Search Country</b>\n\nType the country name:",
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+# ====================== SEARCH COUNTRY — HANDLE INPUT ======================
+@router.message(BuyStates.search_country)
+async def handle_country_search_input(message: Message, state: FSMContext):
+    search_term = message.text.strip()
+
+    try:
+        countries = await SMSManService.get_countries()
+        country_list = list(countries.values())
+
+        filtered = [
+            c for c in country_list
+            if search_term.lower() in c["title"].lower()
+        ]
+
+        if not filtered:
+            await message.answer(
+                f"❌ No countries found for <b>{search_term}</b>.\n\nTry a different keyword.",
+                parse_mode="HTML"
+            )
+            return
+
+        await message.answer(
+            f"🌍 <b>Results for:</b> <i>{search_term}</i>",
+            reply_markup=countries_keyboard(country_list, search=search_term),
+            parse_mode="HTML"
+        )
+
+    except Exception as e:
+        logger.error(f"handle_country_search_input failed: {e}")
+        await message.answer("⚠️ Search failed. Please try again.")
+    finally:
+        await state.clear()
+
 # ====================== SEARCH SERVICE — PROMPT ======================
 @router.callback_query(BuyCallback.filter(F.action == "search_service"))
 async def search_service_prompt(callback: CallbackQuery, callback_data: BuyCallback, state: FSMContext):
