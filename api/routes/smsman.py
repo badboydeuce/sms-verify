@@ -13,7 +13,7 @@ SMSMAN_TOKEN = os.getenv("SMSMAN_TOKEN")
 BASE_URL = "https://api.sms-man.com/control"
 
 _prices_cache = {}
-_cache_ttl = 300
+_cache_ttl = 60
 
 
 @router.get("/api/smsman/prices/{country_id}")
