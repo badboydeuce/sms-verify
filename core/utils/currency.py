@@ -21,7 +21,6 @@ _fx_ttl = 3600  # Refresh exchange rate every 1 hour
 
 # ====================== EXCHANGE RATE ======================
 async def get_exchange_rate(from_currency: str, to_currency: str = "NGN") -> Decimal:
-    """Fetch live exchange rate from exchangerate-api.com"""
     cache_key = f"{from_currency}_{to_currency}"
     now = time.time()
 
@@ -37,6 +36,7 @@ async def get_exchange_rate(from_currency: str, to_currency: str = "NGN") -> Dec
             )
             response.raise_for_status()
             data = response.json()
+            logger.info(f"FX API raw response: {data}")  # ✅ ADD THIS
             rate = Decimal(str(data["rates"][to_currency]))
             _fx_cache[cache_key] = (now, rate)
             logger.info(f"Exchange rate {from_currency} -> {to_currency}: {rate}")
@@ -44,9 +44,8 @@ async def get_exchange_rate(from_currency: str, to_currency: str = "NGN") -> Dec
 
     except Exception as e:
         logger.error(f"Failed to fetch exchange rate: {e}")
-        # Fallback hardcoded rate if API fails
         fallbacks = {
-            "USD_NGN": Decimal("1580.0"),  # ✅ USD only now
+            "USD_NGN": Decimal("1580.0"),
         }
         return fallbacks.get(cache_key, Decimal("1.0"))
 
