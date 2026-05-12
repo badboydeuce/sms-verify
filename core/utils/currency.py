@@ -16,28 +16,38 @@ RENTAL_MARKUP_PERCENT = Decimal("30.0")
 
 # ====================== FX CACHE ======================
 _fx_cache = {}
-_fx_ttl = 3600  # Refresh exchange rate every 1 hour
+_fx_ttl = 7200  # ✅ 2 hours
 
 
 # ====================== EXCHANGE RATE ======================
 async def get_exchange_rate(from_currency: str, to_currency: str = "NGN") -> Decimal:
+    """Fetch live exchange rate from exchangerate-api.com"""
     cache_key = f"{from_currency}_{to_currency}"
     now = time.time()
 
     if cache_key in _fx_cache:
         cached_at, rate = _fx_cache[cache_key]
         if now - cached_at < _fx_ttl:
+            logger.info(f"Using cached rate {from_currency} -> {to_currency}: {rate}")
             return rate
+
+    # ✅ Hardcode key directly to confirm it works, then switch back to env
+    api_key = EXCHANGE_RATE_API_KEY or "60240a6d53589833a7cb80b5"
+    url = f"https://v6.exchangerate-api.com/v6/{api_key}/latest/{from_currency}"
+
+    logger.info(f"Fetching exchange rate from: {url}")
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(
-                f"https://v6.exchangerate-api.com/v6/{EXCHANGE_RATE_API_KEY}/latest/{from_currency}"
-            )
-            response.raise_for_status()
+            response = await client.get(url)
+            logger.info(f"FX API status: {response.status_code}")
             data = response.json()
-            logger.info(f"FX API raw response: {data}")  # ✅ ADD THIS
-            rate = Decimal(str(data["rates"][to_currency]))
+            logger.info(f"FX API response: {data}")
+
+            if data.get("result") != "success":
+                raise ValueError(f"API error: {data.get('error-type', 'unknown')}")
+
+            rate = Decimal(str(data["conversion_rates"][to_currency]))  # ✅ correct key
             _fx_cache[cache_key] = (now, rate)
             logger.info(f"Exchange rate {from_currency} -> {to_currency}: {rate}")
             return rate
@@ -64,7 +74,7 @@ def apply_rental_markup(price: Decimal) -> Decimal:
 # ====================== COMBINED: CONVERT + MARKUP ======================
 async def convert_and_markup(amount_usd: float, rental: bool = False) -> Decimal:
     """Convert USD to NGN then apply markup. Main function to call."""
-    rate = await get_exchange_rate("USD", "NGN")  # ✅ USD instead of RUB
+    rate = await get_exchange_rate("USD", "NGN")
     amount_ngn = Decimal(str(amount_usd)) * rate
 
     if rental:
