@@ -12,7 +12,7 @@ from core.models.order import Order
 
 logger = logging.getLogger(__name__)
 
-MAX_WAIT_SECONDS = 300  # 5 minutes
+MAX_WAIT_SECONDS = 300
 POLL_INTERVAL = 5
 
 
@@ -45,6 +45,18 @@ async def poll_order(
 
                 if order.sms_received:
                     sms_text = getattr(order, "sms_text", None) or order.otp_code
+                    extra_charge = getattr(order, "extra_charge", None)
+
+                    # Build charge info line
+                    if extra_charge:
+                        charge_info = (
+                            f"\n\n⚠️ <b>Service Charge Notice</b>\n"
+                            f"OTP was delivered by <b>{extra_charge['service']}</b>\n"
+                            f"Total charged: ₦{extra_charge['amount']}\n"
+                            f"Extra deducted: ₦{extra_charge['difference']}"
+                        )
+                    else:
+                        charge_info = f"\n\n💰 Charged: ₦{order.cost}"
 
                     await bot.edit_message_text(
                         chat_id=chat_id,
@@ -52,7 +64,8 @@ async def poll_order(
                         text=(
                             f"✅ <b>SMS Received</b>\n\n"
                             f"📱 Number: <code>{order.number}</code>\n"
-                            f"📦 Service: {order.service_name}\n\n"
+                            f"📦 Service: {order.service_name}"
+                            f"{charge_info}\n\n"
                             f"💬 Message:\n<code>{sms_text}</code>"
                         ),
                         parse_mode="HTML"
