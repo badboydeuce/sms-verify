@@ -11,7 +11,11 @@ from aiogram.fsm.context import FSMContext
 from bot.callback_factories.buy import BuyCallback
 from bot.states.buy import BuyStates
 
-from bot.keyboards.buy import buy_menu_keyboard, rental_duration_keyboard
+from bot.keyboards.buy import (
+    buy_menu_keyboard,
+    rental_duration_keyboard,
+    rental_countries_keyboard  # ✅ imported from keyboards
+)
 from bot.keyboards.countries import countries_keyboard
 from bot.keyboards.services import services_keyboard
 from bot.keyboards.orders import activation_order_keyboard, rental_order_keyboard
@@ -81,8 +85,7 @@ async def choose_type(callback: CallbackQuery, callback_data: BuyCallback):
 @router.callback_query(BuyCallback.filter(F.action == "rental_duration"))
 async def choose_rental_duration(
     callback: CallbackQuery,
-    callback_data: BuyCallback,
-    state: FSMContext
+    callback_data: BuyCallback
 ):
     try:
         rent_type, time_str = callback_data.value.split("_")
@@ -102,7 +105,7 @@ async def choose_rental_duration(
             )
             return
 
-        # Need country names — fetch from activation countries list
+        # Get country names from activation countries list
         all_countries = await SMSManService.get_countries()
         country_map = {str(c["id"]): c["title"] for c in all_countries.values()}
 
@@ -209,7 +212,7 @@ async def choose_country(callback: CallbackQuery, callback_data: BuyCallback):
             return
 
         await callback.message.edit_text(
-            f"📱 <b>Select Service</b>\n\nChoose a service to purchase.",
+            "📱 <b>Select Service</b>\n\nChoose a service to purchase.",
             reply_markup=services_keyboard(services, country_id),
             parse_mode="HTML"
         )
@@ -397,26 +400,3 @@ async def back_main_menu(callback: CallbackQuery):
         parse_mode="HTML"
     )
     await callback.answer()
-
-
-# ====================== HELPERS ======================
-def rental_countries_keyboard(countries, rent_type, time):
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
-
-    kb = InlineKeyboardBuilder()
-
-    for country in countries[:40]:
-        kb.button(
-            text=f"{country['title']}",
-            callback_data=BuyCallback(
-                action="rental_country",
-                value=f"{country['id']}|{rent_type}|{time}"
-            ).pack()
-        )
-
-    kb.button(text="🔙 Back", callback_data=BuyCallback(
-        action="type", value="rental"
-    ).pack())
-
-    kb.adjust(2)
-    return kb.as_markup()
