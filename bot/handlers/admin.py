@@ -1,14 +1,15 @@
 # bot/handlers/admin.py
 
-from aiogram import Router
+from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery
 
 import httpx
 import logging
 
 from bot.handlers.filters.admin import AdminFilter
 from bot.keyboards.admin import admin_keyboard
+from bot.callback_factories.admin import AdminCallback
 from core.config import API_BASE_URL
 
 router = Router()
@@ -28,6 +29,80 @@ async def admin_panel(message: Message):
         reply_markup=admin_keyboard(),
         parse_mode="HTML"
     )
+
+
+# ====================== USERS BUTTON ======================
+@router.callback_query(AdminCallback.filter(F.action == "users"))
+async def admin_users(callback: CallbackQuery):
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{API_BASE_URL}/api/admin/stats")
+            response.raise_for_status()
+            data = response.json()
+
+        await callback.message.answer(
+            f"👥 <b>Users</b>\n\n"
+            f"Total Registered: <b>{data['total_users']}</b>\n"
+            f"Total Wallet Balance: ₦{data['total_wallet_balance']:,.2f}",
+            parse_mode="HTML"
+        )
+
+    except Exception as e:
+        logger.error(f"admin_users failed: {e}")
+        await callback.answer("❌ Failed to fetch users.", show_alert=True)
+
+    await callback.answer()
+
+
+# ====================== ORDERS BUTTON ======================
+@router.callback_query(AdminCallback.filter(F.action == "orders"))
+async def admin_orders(callback: CallbackQuery):
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{API_BASE_URL}/api/admin/stats")
+            response.raise_for_status()
+            data = response.json()
+
+        status_lines = "\n".join(
+            f"• {status}: {count}"
+            for status, count in data.get("orders_by_status", {}).items()
+        )
+
+        await callback.message.answer(
+            f"📦 <b>Orders</b>\n\n"
+            f"Total Orders: <b>{data['total_orders']}</b>\n\n"
+            f"<b>By Status:</b>\n{status_lines or 'No orders yet'}",
+            parse_mode="HTML"
+        )
+
+    except Exception as e:
+        logger.error(f"admin_orders failed: {e}")
+        await callback.answer("❌ Failed to fetch orders.", show_alert=True)
+
+    await callback.answer()
+
+
+# ====================== REVENUE BUTTON ======================
+@router.callback_query(AdminCallback.filter(F.action == "revenue"))
+async def admin_revenue(callback: CallbackQuery):
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{API_BASE_URL}/api/admin/stats")
+            response.raise_for_status()
+            data = response.json()
+
+        await callback.message.answer(
+            f"💰 <b>Revenue</b>\n\n"
+            f"Total Revenue: ₦{data['total_revenue']:,.2f}\n"
+            f"Total Wallet Balance: ₦{data['total_wallet_balance']:,.2f}",
+            parse_mode="HTML"
+        )
+
+    except Exception as e:
+        logger.error(f"admin_revenue failed: {e}")
+        await callback.answer("❌ Failed to fetch revenue.", show_alert=True)
+
+    await callback.answer()
 
 
 # ====================== CREDIT USER ======================
@@ -134,7 +209,7 @@ async def debit_user(message: Message):
         elif e.response.status_code == 404:
             await message.answer("❌ User not found.")
         else:
-            await message.answer(f"❌ Failed to debit user.")
+            await message.answer("❌ Failed to debit user.")
     except Exception as e:
         logger.error(f"Debit user failed: {e}")
         await message.answer("❌ Failed to debit user. Please try again.")
