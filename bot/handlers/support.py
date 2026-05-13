@@ -13,7 +13,7 @@ async def support_menu(callback: CallbackQuery):
 
 Contact admin for assistance.
 Support: @DeuceVerifySupport | 
-Https://t.me/DeuceVerifySuppirt
+https://t.me/DeuceVerifySupport
 Channel: https://t.me/DeuceVerify
 
 """
