@@ -1,4 +1,5 @@
 # bot/handlers/buy.py
+
 import logging
 from decimal import Decimal
 from asyncio import create_task
@@ -6,12 +7,11 @@ from asyncio import create_task
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.callback_factories.buy import BuyCallback
 from bot.states.buy import BuyStates
 
-from bot.keyboards.buy import buy_menu_keyboard
+from bot.keyboards.buy import buy_menu_keyboard, rental_duration_keyboard
 from bot.keyboards.countries import countries_keyboard
 from bot.keyboards.services import services_keyboard
 from bot.keyboards.orders import activation_order_keyboard, rental_order_keyboard
@@ -33,15 +33,12 @@ router = Router()
 # ====================== BUY MENU ======================
 @router.callback_query(F.data == "buy_menu")
 async def buy_menu(callback: CallbackQuery):
-    text = """
-<b>📱 Buy Number</b>
-
-Choose service type:
-
-- One-Time SMS
-- Rent Number
-"""
-    await callback.message.edit_text(text=text, reply_markup=buy_menu_keyboard())
+    await callback.message.edit_text(
+        "<b>📱 Buy Number</b>\n\nChoose service type:\n\n"
+        "• One-Time SMS\n• Rent Number",
+        reply_markup=buy_menu_keyboard(),
+        parse_mode="HTML"
+    )
     await callback.answer()
 
 
@@ -62,7 +59,16 @@ async def choose_type(callback: CallbackQuery, callback_data: BuyCallback):
             )
 
         elif service_type == "rental":
-            await _show_rental_duration(callback)
+            await callback.message.edit_text(
+                "♻️ <b>Rent a Number</b>\n\nSelect rental duration:",
+                reply_markup=rental_duration_keyboard(),
+                parse_mode="HTML"
+            )
+
+        elif service_type == "compatible":
+            await callback.message.edit_text(
+                "🔗 <b>Compatible API</b>\n\nAPI integration panel coming soon."
+            )
 
     except Exception as e:
         logger.error(f"choose_type failed: {e}")
@@ -71,12 +77,137 @@ async def choose_type(callback: CallbackQuery, callback_data: BuyCallback):
         await callback.answer()
 
 
-# ====================== RENTAL ======================
-async def _show_rental_duration(callback: CallbackQuery):
-    pass
+# ====================== RENTAL DURATION SELECTED ======================
+@router.callback_query(BuyCallback.filter(F.action == "rental_duration"))
+async def choose_rental_duration(
+    callback: CallbackQuery,
+    callback_data: BuyCallback,
+    state: FSMContext
+):
+    try:
+        rent_type, time_str = callback_data.value.split("_")
+        time = int(time_str)
+    except ValueError:
+        return await callback.answer("Invalid selection", show_alert=True)
+
+    await state.update_data(rent_type=rent_type, time=time)
+
+    await callback.message.edit_text("⏳ Fetching available countries...")
+
+    try:
+        countries = await SMSManService.get_countries()
+
+        await callback.message.edit_text(
+            f"🌍 <b>Select Country</b>\n\nRental: {time} {rent_type}",
+            reply_markup=rental_countries_keyboard(
+                list(countries.values()),
+                rent_type,
+                time
+            ),
+            parse_mode="HTML"
+        )
+
+    except Exception as e:
+        logger.error(f"choose_rental_duration failed: {e}")
+        await callback.message.edit_text("⚠️ Failed to fetch countries.")
+    finally:
+        await callback.answer()
 
 
-# ====================== CHOOSE COUNTRY ======================
+# ====================== RENTAL COUNTRY SELECTED ======================
+@router.callback_query(BuyCallback.filter(F.action == "rental_country"))
+async def choose_rental_country(
+    callback: CallbackQuery,
+    callback_data: BuyCallback,
+    state: FSMContext,
+    db_user
+):
+    # value format: "country_id|rent_type|time"
+    try:
+        parts = callback_data.value.split("|")
+        country_id = parts[0]
+        rent_type = parts[1]
+        time = int(parts[2])
+    except (ValueError, IndexError):
+        return await callback.answer("Invalid selection", show_alert=True)
+
+    processing = await callback.message.edit_text("⏳ Purchasing rental number...")
+
+    try:
+        # Fetch limits to get price
+        limits = await SMSManService.get_rental_limits(country_id, rent_type, time)
+
+        print(f"RENTAL LIMITS RESPONSE: {limits}", flush=True)
+
+        # Get price from limits response
+        price_rub = None
+        if isinstance(limits, dict):
+            price_rub = limits.get("cost") or limits.get("price")
+
+        if not price_rub:
+            await processing.edit_text(
+                "❌ No rental numbers available for this country.\n"
+                "Try a different country or duration."
+            )
+            return
+
+        # Convert RUB → NGN with markup
+        from core.utils.currency import convert_and_markup
+        final_price = await convert_and_markup(float(price_rub), rental=True)
+
+        # Get country name
+        countries = await SMSManService.get_countries()
+        country_name = next(
+            (c["title"] for c in countries.values() if str(c["id"]) == str(country_id)),
+            "Unknown"
+        )
+
+        async with AsyncSessionLocal() as db:
+            order = await OrderService.create_rental_order(
+                db=db,
+                user_id=db_user.id,
+                country_id=country_id,
+                country_name=country_name,
+                rent_type=rent_type,
+                time=time,
+                price=final_price
+            )
+
+        await processing.edit_text(
+            f"<b>✅ Rental Number Purchased</b>\n\n"
+            f"📱 Number: <code>{order.number}</code>\n\n"
+            f"🌍 Country: {order.country_name}\n\n"
+            f"⏱ Duration: {order.rental_duration}\n\n"
+            f"💰 Cost: ₦{order.cost}\n\n"
+            f"⏳ Expires: {order.expires_at.strftime('%Y-%m-%d %H:%M UTC')}\n\n"
+            f"Use the buttons below to check for incoming SMS.",
+            reply_markup=rental_order_keyboard(order.id),
+            parse_mode="HTML"
+        )
+
+        create_task(monitor_rental(
+            bot=callback.bot,
+            order_id=order.id,
+            chat_id=callback.message.chat.id,
+            message_id=processing.message_id
+        ))
+
+    except InsufficientBalance:
+        await processing.edit_text(
+            "❌ Insufficient balance.\n\nPlease fund your wallet first."
+        )
+    except SMSManAPIError as e:
+        await processing.edit_text(
+            f"⚠️ SMS-Man error: {str(e)}\n\nTry again."
+        )
+    except Exception as e:
+        logger.exception(f"choose_rental_country failed: {e}")
+        await processing.edit_text("❌ Purchase failed. Please try again.")
+    finally:
+        await callback.answer()
+
+
+# ====================== CHOOSE COUNTRY (ACTIVATION) ======================
 @router.callback_query(BuyCallback.filter(F.action == "country"))
 async def choose_country(callback: CallbackQuery, callback_data: BuyCallback):
     country_id = callback_data.value
@@ -90,7 +221,7 @@ async def choose_country(callback: CallbackQuery, callback_data: BuyCallback):
             return
 
         await callback.message.edit_text(
-            f"📱 <b>Select Service</b>\n\nCountry ID: {country_id}",
+            f"📱 <b>Select Service</b>\n\nChoose a service to purchase.",
             reply_markup=services_keyboard(services, country_id),
             parse_mode="HTML"
         )
@@ -102,9 +233,13 @@ async def choose_country(callback: CallbackQuery, callback_data: BuyCallback):
         await callback.answer()
 
 
-# ====================== SEARCH COUNTRY — PROMPT ======================
+# ====================== SEARCH COUNTRY ======================
 @router.callback_query(BuyCallback.filter(F.action == "search_country"))
-async def search_country_prompt(callback: CallbackQuery, callback_data: BuyCallback, state: FSMContext):
+async def search_country_prompt(
+    callback: CallbackQuery,
+    callback_data: BuyCallback,
+    state: FSMContext
+):
     await state.set_state(BuyStates.search_country)
     await callback.message.edit_text(
         "🔍 <b>Search Country</b>\n\nType the country name:",
@@ -113,7 +248,6 @@ async def search_country_prompt(callback: CallbackQuery, callback_data: BuyCallb
     await callback.answer()
 
 
-# ====================== SEARCH COUNTRY — HANDLE INPUT ======================
 @router.message(BuyStates.search_country)
 async def handle_country_search_input(message: Message, state: FSMContext):
     search_term = message.text.strip()
@@ -146,21 +280,25 @@ async def handle_country_search_input(message: Message, state: FSMContext):
     finally:
         await state.clear()
 
-# ====================== SEARCH SERVICE — PROMPT ======================
+
+# ====================== SEARCH SERVICE ======================
 @router.callback_query(BuyCallback.filter(F.action == "search_service"))
-async def search_service_prompt(callback: CallbackQuery, callback_data: BuyCallback, state: FSMContext):
+async def search_service_prompt(
+    callback: CallbackQuery,
+    callback_data: BuyCallback,
+    state: FSMContext
+):
     country_id = callback_data.value
     await state.update_data(country_id=country_id)
-    await state.set_state(BuyStates.search_service)  # ✅ was BuyStates.searching_service
+    await state.set_state(BuyStates.search_service)
     await callback.message.edit_text(
-        "🔍 <b>Search Service</b>\n\nType the name of the service you're looking for:",
+        "🔍 <b>Search Service</b>\n\nType the name of the service:",
         parse_mode="HTML"
     )
     await callback.answer()
 
 
-# ====================== SEARCH SERVICE — HANDLE INPUT ======================
-@router.message(BuyStates.search_service)  # ✅ was BuyStates.searching_service
+@router.message(BuyStates.search_service)
 async def handle_search_input(message: Message, state: FSMContext):
     data = await state.get_data()
     country_id = data.get("country_id")
@@ -192,7 +330,8 @@ async def handle_search_input(message: Message, state: FSMContext):
     finally:
         await state.clear()
 
-# ====================== BUY SERVICE ======================
+
+# ====================== BUY SERVICE (ACTIVATION) ======================
 @router.callback_query(BuyCallback.filter(F.action == "service"))
 async def buy_service(callback: CallbackQuery, callback_data: BuyCallback, db_user):
     try:
@@ -204,7 +343,10 @@ async def buy_service(callback: CallbackQuery, callback_data: BuyCallback, db_us
 
     try:
         services = await SMSManService.get_prices_with_markup(country_id)
-        selected = next((s for s in services if str(s["application_id"]) == str(service_id)), None)
+        selected = next(
+            (s for s in services if str(s["application_id"]) == str(service_id)),
+            None
+        )
 
         if not selected:
             await processing.edit_text("❌ Service no longer available.")
@@ -254,3 +396,39 @@ async def buy_service(callback: CallbackQuery, callback_data: BuyCallback, db_us
         await processing.edit_text("❌ Purchase failed. Please try again.")
     finally:
         await callback.answer()
+
+
+# ====================== BACK TO MAIN MENU ======================
+@router.callback_query(F.data == "main_menu")
+async def back_main_menu(callback: CallbackQuery):
+    from bot.keyboards.main_menu import main_menu_keyboard
+
+    await callback.message.edit_text(
+        "<b>🏠 Main Menu</b>\n\nWelcome to DeuceVerify",
+        reply_markup=main_menu_keyboard(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+# ====================== HELPERS ======================
+def rental_countries_keyboard(countries, rent_type, time):
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+    kb = InlineKeyboardBuilder()
+
+    for country in countries[:40]:
+        kb.button(
+            text=f"{country['title']}",
+            callback_data=BuyCallback(
+                action="rental_country",
+                value=f"{country['id']}|{rent_type}|{time}"
+            ).pack()
+        )
+
+    kb.button(text="🔙 Back", callback_data=BuyCallback(
+        action="type", value="rental"
+    ).pack())
+
+    kb.adjust(2)
+    return kb.as_markup()
