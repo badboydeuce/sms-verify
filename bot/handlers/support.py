@@ -12,6 +12,10 @@ async def support_menu(callback: CallbackQuery):
 <b>❓ Support Center</b>
 
 Contact admin for assistance.
+Support: @DeuceVerifySupport | 
+Https://t.me/DeuceVerifySuppirt
+channel: https://t.me/DeuceVerify
+
 """
 
     await callback.message.edit_text(text, parse_mode="HTML")
