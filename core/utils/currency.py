@@ -9,7 +9,7 @@ RENTAL_MARKUP_PERCENT = Decimal("100.0")
 
 # ====================== HARDCODED FX ======================
 
-HARDCODED_RUB_TO_NGN = Decimal("13.5")  # ✅ 1 RUB ≈ ₦13.5 (adjust as needed)
+HARDCODED_RUB_TO_NGN = Decimal("19")  # ✅ 1 RUB ≈ ₦13.5 (adjust as needed)
 
 # ====================== EXCHANGE RATE ======================
 
