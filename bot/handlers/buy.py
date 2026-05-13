@@ -90,17 +90,28 @@ async def choose_rental_duration(
     except ValueError:
         return await callback.answer("Invalid selection", show_alert=True)
 
-    await state.update_data(rent_type=rent_type, time=time)
-
     await callback.message.edit_text("⏳ Fetching available countries...")
 
     try:
-        countries = await SMSManService.get_countries()
+        rental_countries = await SMSManService.get_rental_countries(rent_type, time)
+
+        if not rental_countries:
+            await callback.message.edit_text(
+                "❌ No countries available for this duration.\n"
+                "Try a different rental period."
+            )
+            return
+
+        # Need country names — fetch from activation countries list
+        all_countries = await SMSManService.get_countries()
+        country_map = {str(c["id"]): c["title"] for c in all_countries.values()}
 
         await callback.message.edit_text(
-            f"🌍 <b>Select Country</b>\n\nRental: {time} {rent_type}",
+            f"🌍 <b>Select Country</b>\n\n"
+            f"Rental: {time} {rent_type} — {len(rental_countries)} countries available",
             reply_markup=rental_countries_keyboard(
-                list(countries.values()),
+                rental_countries,
+                country_map,
                 rent_type,
                 time
             ),
@@ -109,7 +120,7 @@ async def choose_rental_duration(
 
     except Exception as e:
         logger.error(f"choose_rental_duration failed: {e}")
-        await callback.message.edit_text("⚠️ Failed to fetch countries.")
+        await callback.message.edit_text("⚠️ Failed to fetch rental countries.")
     finally:
         await callback.answer()
 
@@ -119,46 +130,25 @@ async def choose_rental_duration(
 async def choose_rental_country(
     callback: CallbackQuery,
     callback_data: BuyCallback,
-    state: FSMContext,
     db_user
 ):
-    # value format: "country_id|rent_type|time"
+    # value format: "country_id|rent_type|time|price_ngn"
     try:
         parts = callback_data.value.split("|")
         country_id = parts[0]
         rent_type = parts[1]
         time = int(parts[2])
+        price_ngn = Decimal(parts[3])
     except (ValueError, IndexError):
         return await callback.answer("Invalid selection", show_alert=True)
 
     processing = await callback.message.edit_text("⏳ Purchasing rental number...")
 
     try:
-        # Fetch limits to get price
-        limits = await SMSManService.get_rental_limits(country_id, rent_type, time)
-
-        print(f"RENTAL LIMITS RESPONSE: {limits}", flush=True)
-
-        # Get price from limits response
-        price_rub = None
-        if isinstance(limits, dict):
-            price_rub = limits.get("cost") or limits.get("price")
-
-        if not price_rub:
-            await processing.edit_text(
-                "❌ No rental numbers available for this country.\n"
-                "Try a different country or duration."
-            )
-            return
-
-        # Convert RUB → NGN with markup
-        from core.utils.currency import convert_and_markup
-        final_price = await convert_and_markup(float(price_rub), rental=True)
-
-        # Get country name
-        countries = await SMSManService.get_countries()
+        all_countries = await SMSManService.get_countries()
         country_name = next(
-            (c["title"] for c in countries.values() if str(c["id"]) == str(country_id)),
+            (c["title"] for c in all_countries.values()
+             if str(c["id"]) == str(country_id)),
             "Unknown"
         )
 
@@ -170,7 +160,7 @@ async def choose_rental_country(
                 country_name=country_name,
                 rent_type=rent_type,
                 time=time,
-                price=final_price
+                price=price_ngn
             )
 
         await processing.edit_text(
@@ -197,9 +187,7 @@ async def choose_rental_country(
             "❌ Insufficient balance.\n\nPlease fund your wallet first."
         )
     except SMSManAPIError as e:
-        await processing.edit_text(
-            f"⚠️ SMS-Man error: {str(e)}\n\nTry again."
-        )
+        await processing.edit_text(f"⚠️ {str(e)}\n\nTry again.")
     except Exception as e:
         logger.exception(f"choose_rental_country failed: {e}")
         await processing.edit_text("❌ Purchase failed. Please try again.")
