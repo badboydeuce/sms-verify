@@ -48,3 +48,33 @@ def rental_duration_keyboard():
     kb.adjust(2)
 
     return kb.as_markup()
+
+
+def rental_countries_keyboard(
+    rental_countries: list,
+    country_map: dict,
+    rent_type: str,
+    time: int
+):
+    kb = InlineKeyboardBuilder()
+
+    for item in rental_countries[:40]:
+        country_id = item["country_id"]
+        name = country_map.get(country_id, f"Country {country_id}")
+        price = item["price_ngn"]
+
+        kb.button(
+            text=f"{name} — ₦{price:,.0f}",
+            callback_data=BuyCallback(
+                action="rental_country",
+                value=f"{country_id}|{rent_type}|{time}|{price}"
+            ).pack()
+        )
+
+    kb.button(
+        text="🔙 Back",
+        callback_data=BuyCallback(action="type", value="rental").pack()
+    )
+
+    kb.adjust(1)
+    return kb.as_markup()
