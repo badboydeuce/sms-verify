@@ -16,10 +16,6 @@ class SMSManService:
     # ===================== LIVE PRICES WITH MARKUP =====================
     @staticmethod
     async def get_prices_with_markup(country_id: int | str) -> list[dict]:
-        """
-        Fetches LIVE prices from SMS-Man → converts USD to NGN → applies markup.
-        This is the main function the bot should call for displaying prices.
-        """
         try:
             raw_prices = await SMSManActivation.get_prices(country_id)
 
@@ -27,16 +23,15 @@ class SMSManService:
 
             for app_id, data in raw_prices.items():
                 try:
-                    base_cost_usd = float(data["cost"])  # ✅ SMS-Man price in USD
+                    base_cost_rub = float(data["cost"])
 
-                    # ✅ Convert USD -> NGN then apply 25% markup
-                    final_price_ngn = await convert_and_markup(base_cost_usd)
+                    final_price_ngn = await convert_and_markup(base_cost_rub)
 
                     result.append({
                         "application_id": str(data["application_id"]),
                         "application": data.get("application", "Unknown"),
-                        "base_price": base_cost_usd,        # Original USD price
-                        "price": float(final_price_ngn),    # Final NGN price shown to user
+                        "base_price": base_cost_rub,
+                        "price": float(final_price_ngn),
                         "count": int(data.get("count", 0)),
                         "currency": "NGN"
                     })
@@ -49,10 +44,9 @@ class SMSManService:
         except Exception:
             raise
 
-    # ===================== LEGACY (raw prices, no markup) =====================
+    # ===================== LEGACY =====================
     @staticmethod
     async def get_prices(country_id: int | str) -> list[dict]:
-        """Legacy method - returns raw USD prices without markup or conversion"""
         raw = await SMSManActivation.get_prices(country_id)
         result = []
 
@@ -72,19 +66,73 @@ class SMSManService:
 
     # ===================== ACTIVATION =====================
     @staticmethod
-    async def buy_activation_number(country_id: int | str, application_id: int | str) -> dict:
+    async def buy_activation_number(
+        country_id: int | str,
+        application_id: int | str
+    ) -> dict:
         return await SMSManActivation.get_number(country_id, application_id)
 
     @staticmethod
     async def get_activation_sms(request_id: int) -> dict:
         return await SMSManActivation.get_sms(request_id)
 
+    # ===================== RENTAL COUNTRIES =====================
+    @staticmethod
+    async def get_rental_countries(rent_type: str, time: int) -> list[dict]:
+        """
+        Returns available countries for rental with count > 0,
+        prices converted from RUB to NGN with rental markup.
+        """
+        data = await SMSManRental.get_limits(rent_type, time)
+
+        if not data or "limits" not in data:
+            return []
+
+        result = []
+
+        for item in data["limits"]:
+            if int(item.get("count", 0)) == 0:
+                continue  # skip unavailable countries
+
+            price_ngn = await convert_and_markup(
+                float(item["cost"]),
+                rental=True
+            )
+
+            result.append({
+                "country_id": str(item["country_id"]),
+                "count": int(item["count"]),
+                "cost_rub": float(item["cost"]),
+                "price_ngn": float(price_ngn)
+            })
+
+        return result
+
     # ===================== RENTAL =====================
     @staticmethod
-    async def rent_number(country_id: int | str, rent_type: str, time: int) -> dict:
+    async def rent_number(
+        country_id: int | str,
+        rent_type: str,
+        time: int
+    ) -> dict:
         return await SMSManRental.get_number(country_id, rent_type, time)
 
     @staticmethod
-    async def get_rental_price_ngn(base_price_usd: float) -> Decimal:
-        """Convert rental price USD -> NGN and apply rental markup"""
-        return await convert_and_markup(base_price_usd, rental=True)
+    async def get_rental_limits(
+        country_id: str,
+        rent_type: str,
+        time: int
+    ) -> dict:
+        return await SMSManRental.get_limits(rent_type, time, country_id=country_id)
+
+    @staticmethod
+    async def get_rental_price_ngn(base_price_rub: float) -> Decimal:
+        return await convert_and_markup(base_price_rub, rental=True)
+
+    @staticmethod
+    async def get_rental_sms(request_id: int) -> dict:
+        return await SMSManRental.get_sms(request_id)
+
+    @staticmethod
+    async def get_all_rental_sms(request_id: int) -> dict:
+        return await SMSManRental.get_all_sms(request_id)
