@@ -13,6 +13,7 @@ from core.services.user_service import UserService
 from core.services.wallet_service import WalletService
 from core.models.user import User
 from core.models.order import Order
+from core.models.transaction import Transaction
 
 router = APIRouter()
 
@@ -33,11 +34,41 @@ class BroadcastSchema(BaseModel):
 
 # ====================== STATS ======================
 @router.get("/api/admin/stats")
-async def admin_stats():
+async def admin_stats(db: AsyncSession = Depends(get_db)):
+
+    # Total users
+    users_result = await db.execute(select(func.count(User.id)))
+    total_users = users_result.scalar() or 0
+
+    # Total orders
+    orders_result = await db.execute(select(func.count(Order.id)))
+    total_orders = orders_result.scalar() or 0
+
+    # Total revenue — sum of all DEBIT transactions
+    revenue_result = await db.execute(
+        select(func.sum(Transaction.amount)).where(
+            Transaction.type == "DEBIT",
+            Transaction.status == "completed"
+        )
+    )
+    total_revenue = float(revenue_result.scalar() or 0)
+
+    # Total wallet balance across all users
+    balance_result = await db.execute(select(func.sum(User.balance)))
+    total_wallet_balance = float(balance_result.scalar() or 0)
+
+    # Orders breakdown by status
+    status_result = await db.execute(
+        select(Order.status, func.count(Order.id)).group_by(Order.status)
+    )
+    orders_by_status = {row[0]: row[1] for row in status_result.fetchall()}
+
     return {
-        "users": 0,
-        "orders": 0,
-        "revenue": 0
+        "total_users": total_users,
+        "total_orders": total_orders,
+        "total_revenue": total_revenue,
+        "total_wallet_balance": total_wallet_balance,
+        "orders_by_status": orders_by_status
     }
 
 
@@ -111,7 +142,6 @@ async def get_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Count total orders
     result = await db.execute(
         select(func.count(Order.id)).where(Order.user_id == user.id)
     )
@@ -133,7 +163,6 @@ async def broadcast_message(
     payload: BroadcastSchema,
     db: AsyncSession = Depends(get_db)
 ):
-    # Fetch all user telegram_ids
     result = await db.execute(select(User.telegram_id))
     telegram_ids = result.scalars().all()
 
