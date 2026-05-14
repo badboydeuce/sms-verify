@@ -15,6 +15,9 @@ from core.models.user import User
 from core.models.order import Order
 from core.models.transaction import Transaction
 
+from sqlalchemy import select, func, cast
+from sqlalchemy.dialects.postgresql import ENUM as PgEnum
+
 router = APIRouter()
 
 
@@ -44,16 +47,19 @@ async def admin_stats(db: AsyncSession = Depends(get_db)):
     orders_result = await db.execute(select(func.count(Order.id)))
     total_orders = orders_result.scalar() or 0
 
-    # Total revenue — sum of all DEBIT transactions
+    # Total revenue — cast string to enum type for comparison
     revenue_result = await db.execute(
         select(func.sum(Transaction.amount)).where(
             Transaction.type == "DEBIT",
-            Transaction.status == "completed"
+            Transaction.status == cast(
+                "completed",
+                PgEnum(name="transactionstatus")
+            )
         )
     )
     total_revenue = float(revenue_result.scalar() or 0)
 
-    # Total wallet balance across all users
+    # Total wallet balance
     balance_result = await db.execute(select(func.sum(User.balance)))
     total_wallet_balance = float(balance_result.scalar() or 0)
 
@@ -70,7 +76,6 @@ async def admin_stats(db: AsyncSession = Depends(get_db)):
         "total_wallet_balance": total_wallet_balance,
         "orders_by_status": orders_by_status
     }
-
 
 # ====================== CREDIT USER ======================
 @router.post("/api/admin/credit")
