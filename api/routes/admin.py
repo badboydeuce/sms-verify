@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies.db import get_db
@@ -14,9 +14,6 @@ from core.services.wallet_service import WalletService
 from core.models.user import User
 from core.models.order import Order
 from core.models.transaction import Transaction
-
-from sqlalchemy import select, func, cast
-from sqlalchemy.dialects.postgresql import ENUM as PgEnum
 
 router = APIRouter()
 
@@ -47,15 +44,14 @@ async def admin_stats(db: AsyncSession = Depends(get_db)):
     orders_result = await db.execute(select(func.count(Order.id)))
     total_orders = orders_result.scalar() or 0
 
-    # Total revenue — cast string to enum type for comparison
+    # Total revenue — use raw SQL to avoid enum casting issues
     revenue_result = await db.execute(
-        select(func.sum(Transaction.amount)).where(
-            Transaction.type == "DEBIT",
-            Transaction.status == cast(
-                "completed",
-                PgEnum(name="transactionstatus")
-            )
-        )
+        text("""
+            SELECT COALESCE(SUM(amount), 0)
+            FROM transactions
+            WHERE type::text = 'DEBIT'
+            AND status::text = 'completed'
+        """)
     )
     total_revenue = float(revenue_result.scalar() or 0)
 
@@ -76,6 +72,7 @@ async def admin_stats(db: AsyncSession = Depends(get_db)):
         "total_wallet_balance": total_wallet_balance,
         "orders_by_status": orders_by_status
     }
+
 
 # ====================== CREDIT USER ======================
 @router.post("/api/admin/credit")
