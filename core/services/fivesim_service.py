@@ -2,7 +2,7 @@
 
 from decimal import Decimal
 from core.fivesim.client import FiveSimClient
-from core.utils.currency import convert_and_markup
+from core.utils.currency import convert_usd_and_markup  # ✅ was convert_and_markup
 
 
 class FiveSimService:
@@ -15,8 +15,8 @@ class FiveSimService:
         result = []
         for key, data in raw.items():
             result.append({
-                "name": key,                          # e.g. "nigeria"
-                "title": data.get("text_en", key.title()),  # e.g. "Nigeria"
+                "name": key,
+                "title": data.get("text_en", key.title()),
             })
 
         result.sort(key=lambda x: x["title"])
@@ -36,12 +36,12 @@ class FiveSimService:
 
             price_usd = float(data.get("Price", 0))
 
-            # 5sim prices are in USD — convert to NGN
-            price_ngn = await convert_and_markup(price_usd)
+            # ✅ 5sim prices are in USD — use USD converter
+            price_ngn = await convert_usd_and_markup(price_usd)
 
             result.append({
-                "name": product_name,               # e.g. "whatsapp"
-                "title": product_name.title(),      # e.g. "Whatsapp"
+                "name": product_name,
+                "title": product_name.title(),
                 "qty": int(data.get("Qty", 0)),
                 "price_usd": price_usd,
                 "price_ngn": float(price_ngn)
