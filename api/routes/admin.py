@@ -86,7 +86,7 @@ async def list_users(
 
     result = await db.execute(
         select(User)
-        .order_by(User.created_by.desc())
+        .order_by(User.created_at.desc())
         .offset(offset)
         .limit(limit)
     )
