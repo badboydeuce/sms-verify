@@ -301,11 +301,15 @@ async def fivesim_buy(callback: CallbackQuery, callback_data: BuyCallback, db_us
     try:
         response = await FiveSimService.buy_activation(country, product)
 
-        if response.get("status") == "no free phones" or "phone" not in response:
-            await processing.edit_text(
-                "❌ No numbers available.\n\nTry a different country or service."
-            )
-            return
+# ✅ 5sim returns error as plain string on 400
+if "phone" not in response:
+    error = response if isinstance(response, str) else str(response)
+    await processing.edit_text(
+        f"❌ Could not get number.\n\n"
+        f"Reason: {error}\n\n"
+        f"Try a different country or service."
+    )
+    return
 
         async with AsyncSessionLocal() as db:
             order = await OrderService.create_activation_order(
