@@ -23,7 +23,7 @@ from bot.keyboards.orders import activation_order_keyboard, rental_order_keyboar
 
 from core.database.session import AsyncSessionLocal
 from core.services.smsman_service import SMSManService
-from core.services.fivesim_service import FiveSimService  # ✅ added
+from core.services.fivesim_service import FiveSimService
 from core.services.order_service import OrderService
 from core.exceptions.wallet import InsufficientBalance
 from core.exceptions.smsman import NumberUnavailable, SMSManAPIError
@@ -73,7 +73,6 @@ async def choose_type(callback: CallbackQuery, callback_data: BuyCallback):
 
         elif service_type == "compatible":
             await callback.message.edit_text("⏳ Fetching countries from 5sim...")
-
             countries = await FiveSimService.get_countries()
 
             kb = InlineKeyboardBuilder()
@@ -85,6 +84,13 @@ async def choose_type(callback: CallbackQuery, callback_data: BuyCallback):
                         value=country["name"]
                     ).pack()
                 )
+            kb.button(
+                text="🔍 Search Country",
+                callback_data=BuyCallback(
+                    action="5sim_search_country",
+                    value="start"
+                ).pack()
+            )
             kb.button(text="🔙 Back", callback_data="buy_menu")
             kb.adjust(2)
 
@@ -267,6 +273,13 @@ async def fivesim_country(callback: CallbackQuery, callback_data: BuyCallback):
                 ).pack()
             )
         kb.button(
+            text="🔍 Search Service",
+            callback_data=BuyCallback(
+                action="5sim_search_service",
+                value=country
+            ).pack()
+        )
+        kb.button(
             text="🔙 Back",
             callback_data=BuyCallback(action="type", value="compatible").pack()
         )
@@ -285,6 +298,133 @@ async def fivesim_country(callback: CallbackQuery, callback_data: BuyCallback):
         await callback.answer()
 
 
+# ====================== 5SIM SEARCH COUNTRY ======================
+@router.callback_query(BuyCallback.filter(F.action == "5sim_search_country"))
+async def fivesim_search_country_prompt(
+    callback: CallbackQuery,
+    state: FSMContext
+):
+    await state.set_state(BuyStates.fivesim_search_country)
+    await callback.message.edit_text(
+        "🔍 <b>Search Country (5sim)</b>\n\nType the country name:",
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.message(BuyStates.fivesim_search_country)
+async def fivesim_handle_country_search(message: Message, state: FSMContext):
+    search_term = message.text.strip()
+
+    try:
+        countries = await FiveSimService.get_countries()
+        filtered = [
+            c for c in countries
+            if search_term.lower() in c["title"].lower()
+        ]
+
+        if not filtered:
+            await message.answer(
+                f"❌ No countries found for <b>{search_term}</b>.\n\nTry a different keyword.",
+                parse_mode="HTML"
+            )
+            return
+
+        kb = InlineKeyboardBuilder()
+        for country in filtered[:40]:
+            kb.button(
+                text=country["title"],
+                callback_data=BuyCallback(
+                    action="5sim_country",
+                    value=country["name"]
+                ).pack()
+            )
+        kb.button(
+            text="🔙 Back",
+            callback_data=BuyCallback(action="type", value="compatible").pack()
+        )
+        kb.adjust(2)
+
+        await message.answer(
+            f"🌍 <b>Results for:</b> <i>{search_term}</i>",
+            reply_markup=kb.as_markup(),
+            parse_mode="HTML"
+        )
+
+    except Exception as e:
+        logger.error(f"fivesim_handle_country_search failed: {e}")
+        await message.answer("⚠️ Search failed. Please try again.")
+    finally:
+        await state.clear()
+
+
+# ====================== 5SIM SEARCH SERVICE ======================
+@router.callback_query(BuyCallback.filter(F.action == "5sim_search_service"))
+async def fivesim_search_service_prompt(
+    callback: CallbackQuery,
+    callback_data: BuyCallback,
+    state: FSMContext
+):
+    await state.update_data(fivesim_country=callback_data.value)
+    await state.set_state(BuyStates.fivesim_search_service)
+    await callback.message.edit_text(
+        "🔍 <b>Search Service (5sim)</b>\n\nType the service name:",
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.message(BuyStates.fivesim_search_service)
+async def fivesim_handle_service_search(message: Message, state: FSMContext):
+    search_term = message.text.strip()
+    data = await state.get_data()
+    country = data.get("fivesim_country")
+
+    try:
+        products = await FiveSimService.get_products_with_markup(country)
+        filtered = [
+            p for p in products
+            if search_term.lower() in p["title"].lower()
+        ]
+
+        if not filtered:
+            await message.answer(
+                f"❌ No services found for <b>{search_term}</b>.\n\nTry a different keyword.",
+                parse_mode="HTML"
+            )
+            return
+
+        kb = InlineKeyboardBuilder()
+        for p in filtered[:40]:
+            kb.button(
+                text=f"{p['title']} — ₦{p['price_ngn']:,.0f} ({p['qty']} left)",
+                callback_data=BuyCallback(
+                    action="5sim_service",
+                    value=f"{country}|{p['name']}|{p['price_ngn']}"
+                ).pack()
+            )
+        kb.button(
+            text="🔙 Back",
+            callback_data=BuyCallback(
+                action="5sim_country",
+                value=country
+            ).pack()
+        )
+        kb.adjust(1)
+
+        await message.answer(
+            f"📱 <b>Results for:</b> <i>{search_term}</i>",
+            reply_markup=kb.as_markup(),
+            parse_mode="HTML"
+        )
+
+    except Exception as e:
+        logger.error(f"fivesim_handle_service_search failed: {e}")
+        await message.answer("⚠️ Search failed. Please try again.")
+    finally:
+        await state.clear()
+
+
 # ====================== 5SIM SERVICE SELECTED ======================
 @router.callback_query(BuyCallback.filter(F.action == "5sim_service"))
 async def fivesim_buy(callback: CallbackQuery, callback_data: BuyCallback, db_user):
@@ -301,9 +441,8 @@ async def fivesim_buy(callback: CallbackQuery, callback_data: BuyCallback, db_us
     try:
         response = await FiveSimService.buy_activation(country, product)
 
-        # ✅ Handle error response
         if "phone" not in response:
-            error = response if isinstance(response, str) else str(response)
+            error = response.get("error", str(response))
             await processing.edit_text(
                 f"❌ Could not get number.\n\n"
                 f"Reason: {error}\n\n"
@@ -346,6 +485,7 @@ async def fivesim_buy(callback: CallbackQuery, callback_data: BuyCallback, db_us
         await processing.edit_text("❌ Purchase failed. Please try again.")
     finally:
         await callback.answer()
+
 
 # ====================== 5SIM POLLER ======================
 async def poll_fivesim_order(bot, fivesim_order_id, chat_id, message_id):
@@ -391,7 +531,6 @@ async def poll_fivesim_order(bot, fivesim_order_id, chat_id, message_id):
         await asyncio.sleep(INTERVAL)
         elapsed += INTERVAL
 
-    # Timeout
     try:
         await FiveSimService.cancel_order(fivesim_order_id)
         await bot.edit_message_text(
@@ -408,7 +547,7 @@ async def poll_fivesim_order(bot, fivesim_order_id, chat_id, message_id):
         logger.error(f"poll_fivesim_order timeout handler error: {e}")
 
 
-# ====================== SEARCH COUNTRY ======================
+# ====================== SEARCH COUNTRY (SMS-MAN) ======================
 @router.callback_query(BuyCallback.filter(F.action == "search_country"))
 async def search_country_prompt(
     callback: CallbackQuery,
@@ -456,7 +595,7 @@ async def handle_country_search_input(message: Message, state: FSMContext):
         await state.clear()
 
 
-# ====================== SEARCH SERVICE ======================
+# ====================== SEARCH SERVICE (SMS-MAN) ======================
 @router.callback_query(BuyCallback.filter(F.action == "search_service"))
 async def search_service_prompt(
     callback: CallbackQuery,
