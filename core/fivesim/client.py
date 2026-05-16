@@ -62,10 +62,17 @@ class FiveSimClient:
                 headers=_headers()
             )
 
-            # ✅ Don't raise — read error body first
-            data = response.json()
-            print(f"5SIM BUY RESPONSE: {response.status_code} {data}", flush=True)
-            return data
+            print(f"5SIM BUY STATUS: {response.status_code}", flush=True)
+            print(f"5SIM BUY BODY: {response.text}", flush=True)
+
+            # ✅ Handle empty body
+            if not response.text.strip():
+                return {"error": f"Empty response from 5sim (status {response.status_code})"}
+
+            try:
+                return response.json()
+            except Exception:
+                return {"error": response.text or f"Invalid response (status {response.status_code})"}
 
     # ===================== ORDER MANAGEMENT =====================
     @staticmethod
