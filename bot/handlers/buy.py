@@ -441,13 +441,8 @@ async def fivesim_buy(callback: CallbackQuery, callback_data: BuyCallback, db_us
     try:
         response = await FiveSimService.buy_activation(country, product)
 
-        if "phone" not in response:
-            error = response.get("error", str(response))
-            await processing.edit_text(
-                f"❌ Could not get number.\n\n"
-                f"Reason: {error}\n\n"
-                f"Try a different country or service."
-            )
+        if "phone" not in response:          # ✅ correct indent
+            await processing.edit_text("❌ Could not get number.")
             return
 
         async with AsyncSessionLocal() as db:
@@ -485,6 +480,7 @@ async def fivesim_buy(callback: CallbackQuery, callback_data: BuyCallback, db_us
         await processing.edit_text("❌ Purchase failed. Please try again.")
     finally:
         await callback.answer()
+
 
 
 # ====================== 5SIM POLLER ======================
