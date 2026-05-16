@@ -36,21 +36,17 @@ class BroadcastSchema(BaseModel):
 @router.get("/api/admin/stats")
 async def admin_stats(db: AsyncSession = Depends(get_db)):
 
-    # Total users
     users_result = await db.execute(select(func.count(User.id)))
     total_users = users_result.scalar() or 0
 
-    # ✅ Active users — users with at least one order
     active_result = await db.execute(
         select(func.count(distinct(Order.user_id)))
     )
     active_users = active_result.scalar() or 0
 
-    # Total orders
     orders_result = await db.execute(select(func.count(Order.id)))
     total_orders = orders_result.scalar() or 0
 
-    # Total revenue
     revenue_result = await db.execute(
         text("""
             SELECT COALESCE(SUM(amount), 0)
@@ -61,11 +57,9 @@ async def admin_stats(db: AsyncSession = Depends(get_db)):
     )
     total_revenue = float(revenue_result.scalar() or 0)
 
-    # Total wallet balance
     balance_result = await db.execute(select(func.sum(User.balance)))
     total_wallet_balance = float(balance_result.scalar() or 0)
 
-    # Orders breakdown by status
     status_result = await db.execute(
         select(Order.status, func.count(Order.id)).group_by(Order.status)
     )
@@ -73,7 +67,7 @@ async def admin_stats(db: AsyncSession = Depends(get_db)):
 
     return {
         "total_users": total_users,
-        "active_users": active_users,          # ✅ new
+        "active_users": active_users,
         "total_orders": total_orders,
         "total_revenue": total_revenue,
         "total_wallet_balance": total_wallet_balance,
@@ -92,7 +86,7 @@ async def list_users(
 
     result = await db.execute(
         select(User)
-        .order_by(User.created_at.desc())
+        .order_by(User.created_by.desc())
         .offset(offset)
         .limit(limit)
     )
@@ -149,8 +143,16 @@ async def provider_balances():
                     "Accept": "application/json"
                 }
             )
-            data = response.json()
-            results["fivesim"] = float(data.get("balance", 0))
+
+            print(f"5SIM BALANCE STATUS: {response.status_code}", flush=True)
+            print(f"5SIM BALANCE BODY: {response.text}", flush=True)
+
+            if not response.text.strip():
+                results["fivesim"] = "Error: Empty response"
+            else:
+                data = response.json()
+                results["fivesim"] = float(data.get("balance", 0))
+
     except Exception as e:
         results["fivesim"] = f"Error: {str(e)}"
 
