@@ -441,11 +441,12 @@ async def fivesim_buy(callback: CallbackQuery, callback_data: BuyCallback, db_us
     try:
         async with AsyncSessionLocal() as db:
             from uuid import uuid4
+            from sqlalchemy import update
             from core.services.wallet_service import WalletService
 
             reference = f"5sim_{uuid4()}"
 
-            # ✅ Debit wallet first — raises InsufficientBalance if not enough funds
+            # ✅ Debit wallet first
             await WalletService.debit_balance(
                 db=db,
                 user_id=db_user.id,
@@ -454,7 +455,7 @@ async def fivesim_buy(callback: CallbackQuery, callback_data: BuyCallback, db_us
                 description=f"{product.title()} via 5sim"
             )
 
-            # ✅ Buy from 5sim after wallet check passes
+            # ✅ Buy from 5sim
             response = await FiveSimService.buy_activation(country, product)
 
             if "phone" not in response:
@@ -469,14 +470,18 @@ async def fivesim_buy(callback: CallbackQuery, callback_data: BuyCallback, db_us
                 await processing.edit_text("❌ Could not get number.")
                 return
 
+            # ✅ Save order with provider="5sim" and chat_id
             order = await OrderService.create_activation_order(
                 db=db,
                 user_id=db_user.id,
                 country_id=country,
                 country_name=country.title(),
-                service_id=str(response["id"]),
+                service_id=str(response["id"]),   # ✅ 5sim order ID
                 service_name=product.title(),
-                price=price_ngn
+                price=price_ngn,
+                provider="5sim",                   # ✅ new
+                chat_id=callback.message.chat.id,  # ✅ new
+                message_id=None                    # ✅ set after message sent
             )
 
         msg = await processing.edit_text(
@@ -488,6 +493,17 @@ async def fivesim_buy(callback: CallbackQuery, callback_data: BuyCallback, db_us
             f"⏳ Waiting for SMS...",
             parse_mode="HTML"
         )
+
+        # ✅ Update message_id now that we have it
+        async with AsyncSessionLocal() as db2:
+            from sqlalchemy import update
+            from core.models.order import Order
+            await db2.execute(
+                update(Order)
+                .where(Order.id == order.id)
+                .values(message_id=msg.message_id)
+            )
+            await db2.commit()
 
         create_task(poll_fivesim_order(
             bot=callback.bot,
