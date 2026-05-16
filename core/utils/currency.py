@@ -10,7 +10,7 @@ RENTAL_MARKUP_PERCENT = Decimal("50.0")
 # ====================== HARDCODED FX ======================
 
 HARDCODED_RUB_TO_NGN = Decimal("19")
-HARDCODED_USD_TO_NGN = Decimal("1600.0")
+HARDCODED_USD_TO_NGN = Decimal("2000.0")
 
 # ====================== EXCHANGE RATE ======================
 
