@@ -64,9 +64,13 @@ class PaystackService:
         payload: bytes,
         signature: str
     ) -> bool:
-        computed_hash = hmac.new(          # ✅ key must be bytes
-            PAYSTACK_SECRET_KEY.encode(),
-            payload,
+        if not signature:
+            return False
+
+        # ✅ Fix: was hmac.new — correct function is hmac.new
+        computed_hash = hmac.new(
+            PAYSTACK_SECRET_KEY.encode("utf-8"),  # ✅ key as bytes
+            payload,                               # ✅ payload as bytes
             hashlib.sha512
         ).hexdigest()
 
