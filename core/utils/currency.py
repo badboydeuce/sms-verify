@@ -4,12 +4,13 @@ from decimal import Decimal
 
 # ====================== MARKUP CONFIG ======================
 
-MARKUP_PERCENT = Decimal("100.0")        # 25% profit margin
+MARKUP_PERCENT = Decimal("100.0")
 RENTAL_MARKUP_PERCENT = Decimal("50.0")
 
 # ====================== HARDCODED FX ======================
 
-HARDCODED_RUB_TO_NGN = Decimal("19")  # ✅ 1 RUB ≈ ₦13.5 (adjust as needed)
+HARDCODED_RUB_TO_NGN = Decimal("19")
+HARDCODED_USD_TO_NGN = Decimal("1600.0")
 
 # ====================== EXCHANGE RATE ======================
 
@@ -19,6 +20,7 @@ async def get_exchange_rate(
 ) -> Decimal:
     rates = {
         "RUB_NGN": HARDCODED_RUB_TO_NGN,
+        "USD_NGN": HARDCODED_USD_TO_NGN,  # ✅ added for 5sim
     }
     cache_key = f"{from_currency}_{to_currency}"
     return rates.get(cache_key, Decimal("1.0"))
@@ -38,16 +40,29 @@ def apply_rental_markup(price: Decimal) -> Decimal:
     )
     return final_price.quantize(Decimal("0.01"))
 
-# ====================== CONVERT + MARKUP ======================
+# ====================== CONVERT RUB + MARKUP (SMS-Man) ======================
 
 async def convert_and_markup(
-    amount_rub: float,      # ✅ renamed from amount_usd
+    amount_rub: float,
     rental: bool = False
 ) -> Decimal:
-
     rate = await get_exchange_rate("RUB", "NGN")
-
     amount_ngn = Decimal(str(amount_rub)) * rate
+
+    if rental:
+        return apply_rental_markup(amount_ngn)
+
+    return apply_markup(amount_ngn)
+
+
+# ====================== CONVERT USD + MARKUP (5sim) ======================
+
+async def convert_usd_and_markup(
+    amount_usd: float,
+    rental: bool = False
+) -> Decimal:
+    rate = await get_exchange_rate("USD", "NGN")
+    amount_ngn = Decimal(str(amount_usd)) * rate
 
     if rental:
         return apply_rental_markup(amount_ngn)
