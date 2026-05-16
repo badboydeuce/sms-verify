@@ -61,8 +61,11 @@ class FiveSimClient:
                 f"{BASE_URL}/user/buy/activation/{country}/{operator}/{product}",
                 headers=_headers()
             )
-            response.raise_for_status()
-            return response.json()
+
+            # ✅ Don't raise — read error body first
+            data = response.json()
+            print(f"5SIM BUY RESPONSE: {response.status_code} {data}", flush=True)
+            return data
 
     # ===================== ORDER MANAGEMENT =====================
     @staticmethod
