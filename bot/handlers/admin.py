@@ -25,6 +25,8 @@ async def admin_panel(message: Message):
         "/credit &lt;telegram_id&gt; &lt;amount&gt;\n"
         "/debit &lt;telegram_id&gt; &lt;amount&gt;\n"
         "/user &lt;telegram_id&gt;\n"
+        "/list &lt;page&gt;\n"
+        "/balance\n"
         "/broadcast &lt;message&gt;",
         reply_markup=admin_keyboard(),
         parse_mode="HTML"
@@ -43,6 +45,7 @@ async def admin_users(callback: CallbackQuery):
         await callback.message.answer(
             f"👥 <b>Users</b>\n\n"
             f"Total Registered: <b>{data['total_users']}</b>\n"
+            f"Active Users: <b>{data['active_users']}</b>\n"
             f"Total Wallet Balance: ₦{data['total_wallet_balance']:,.2f}",
             parse_mode="HTML"
         )
@@ -103,6 +106,87 @@ async def admin_revenue(callback: CallbackQuery):
         await callback.answer("❌ Failed to fetch revenue.", show_alert=True)
 
     await callback.answer()
+
+
+# ====================== USER LIST ======================
+@router.message(Command("list"), AdminFilter())
+async def list_users(message: Message):
+    parts = message.text.split()
+    page = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 1
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{API_BASE_URL}/api/admin/users",
+                params={"page": page, "limit": 10}
+            )
+            response.raise_for_status()
+            data = response.json()
+
+        users = data["users"]
+        total_pages = data["total_pages"]
+        total = data["total"]
+
+        if not users:
+            await message.answer("❌ No users found.")
+            return
+
+        lines = "\n\n".join([
+            f"{'👑' if u['is_admin'] else '👤'} "
+            f"@{u['username'] or 'N/A'}\n"
+            f"🆔 <code>{u['telegram_id']}</code>\n"
+            f"💳 ₦{u['balance']:,.2f}\n"
+            f"📅 {u['created_at']}"
+            for u in users
+        ])
+
+        await message.answer(
+            f"👥 <b>User List</b> — Page {page}/{total_pages} ({total} total)\n\n"
+            f"{lines}\n\n"
+            f"Next page: /list {page + 1}" if page < total_pages else
+            f"👥 <b>User List</b> — Page {page}/{total_pages} ({total} total)\n\n"
+            f"{lines}",
+            parse_mode="HTML"
+        )
+
+    except Exception as e:
+        logger.error(f"list_users failed: {e}")
+        await message.answer("❌ Failed to fetch users.")
+
+
+# ====================== PROVIDER BALANCE ======================
+@router.message(Command("balance"), AdminFilter())
+async def provider_balance(message: Message):
+    await message.answer("⏳ Checking provider balances...")
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.get(f"{API_BASE_URL}/api/admin/balances")
+            response.raise_for_status()
+            data = response.json()
+
+        smsman = data.get("smsman")
+        fivesim = data.get("fivesim")
+
+        smsman_line = (
+            f"₽{smsman:,.2f}" if isinstance(smsman, float)
+            else f"❌ {smsman}"
+        )
+        fivesim_line = (
+            f"${fivesim:,.2f}" if isinstance(fivesim, float)
+            else f"❌ {fivesim}"
+        )
+
+        await message.answer(
+            f"💰 <b>Provider Balances</b>\n\n"
+            f"📱 SMS-Man: <b>{smsman_line}</b>\n"
+            f"📡 5sim: <b>{fivesim_line}</b>",
+            parse_mode="HTML"
+        )
+
+    except Exception as e:
+        logger.error(f"provider_balance failed: {e}")
+        await message.answer("❌ Failed to fetch balances.")
 
 
 # ====================== CREDIT USER ======================
