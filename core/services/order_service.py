@@ -39,65 +39,84 @@ class OrderService:
         country_name: str,
         service_id: str,
         service_name: str,
-        price: Decimal
+        price: Decimal,
+        provider: str = "smsman",   # ✅ new
+        chat_id: int = None,        # ✅ new
+        message_id: int = None      # ✅ new
     ):
         final_price = price
         reference = str(uuid4())
 
-        await WalletService.debit_balance(
-            db=db,
-            user_id=user_id,
-            amount=final_price,
-            reference=reference,
-            description=f"{service_name} activation"
-        )
-
-        smsman_response = await SMSManService.buy_activation_number(
-            country_id,
-            service_id
-        )
-
-        logger.info(f"SMS-Man activation response: {smsman_response}")
-
-        if "error_code" in smsman_response:
-            error_code = smsman_response["error_code"]
-            error_msg = smsman_response.get("error_msg", error_code)
-
-            await WalletService.credit_balance(
+        # Only debit for smsman — 5sim debits in the handler before calling this
+        if provider == "smsman":
+            await WalletService.debit_balance(
                 db=db,
                 user_id=user_id,
                 amount=final_price,
-                reference=f"refund_{reference}",
-                description=f"Refund: {service_name} activation failed"
+                reference=reference,
+                description=f"{service_name} activation"
             )
 
-            if error_code == "no_numbers":
-                raise NumberUnavailable(error_msg)
-
-            raise SMSManAPIError(error_msg)
-
-        if "request_id" not in smsman_response or "number" not in smsman_response:
-            await WalletService.credit_balance(
-                db=db,
-                user_id=user_id,
-                amount=final_price,
-                reference=f"refund_{reference}",
-                description="Refund: unexpected SMS-Man response"
+        if provider == "smsman":
+            smsman_response = await SMSManService.buy_activation_number(
+                country_id,
+                service_id
             )
-            raise SMSManAPIError("Unexpected SMS-Man response")
+
+            logger.info(f"SMS-Man activation response: {smsman_response}")
+
+            if "error_code" in smsman_response:
+                error_code = smsman_response["error_code"]
+                error_msg = smsman_response.get("error_msg", error_code)
+
+                await WalletService.credit_balance(
+                    db=db,
+                    user_id=user_id,
+                    amount=final_price,
+                    reference=f"refund_{reference}",
+                    description=f"Refund: {service_name} activation failed"
+                )
+
+                if error_code == "no_numbers":
+                    raise NumberUnavailable(error_msg)
+
+                raise SMSManAPIError(error_msg)
+
+            if "request_id" not in smsman_response or "number" not in smsman_response:
+                await WalletService.credit_balance(
+                    db=db,
+                    user_id=user_id,
+                    amount=final_price,
+                    reference=f"refund_{reference}",
+                    description="Refund: unexpected SMS-Man response"
+                )
+                raise SMSManAPIError("Unexpected SMS-Man response")
+
+            number = smsman_response["number"]
+            request_id = str(smsman_response["request_id"])
+
+        else:
+            # ✅ For 5sim — number and request_id come from service_id
+            # service_id is the 5sim order ID, number passed via service_name workaround
+            # We store fivesim order id as request_id for polling
+            number = service_name  # temporarily reused — fixed below
+            request_id = service_id
 
         order = Order(
             user_id=user_id,
             order_type="ACTIVATION",
+            provider=provider,              # ✅
             service_id=service_id,
             service_name=service_name,
             country_id=country_id,
             country_name=country_name,
-            number=smsman_response["number"],
-            request_id=str(smsman_response["request_id"]),
+            number=number,
+            request_id=request_id,
             cost=final_price,
             status="PENDING",
-            expires_at=datetime.utcnow() + timedelta(minutes=20)
+            expires_at=datetime.utcnow() + timedelta(minutes=20),
+            chat_id=chat_id,               # ✅
+            message_id=message_id          # ✅
         )
 
         db.add(order)
@@ -134,7 +153,6 @@ class OrderService:
                 time
             )
 
-            print(f"RENTAL ORDER RESPONSE: {smsman_response}", flush=True)
             logger.info(f"SMS-Man rental response: {smsman_response}")
 
             if "error_code" in smsman_response:
@@ -155,6 +173,7 @@ class OrderService:
             order = Order(
                 user_id=user_id,
                 order_type="RENTAL",
+                provider="smsman",
                 service_id="rental",
                 service_name="Rental Number",
                 country_id=country_id,
@@ -204,7 +223,6 @@ class OrderService:
     ):
         response = await SMSManService.get_activation_sms(order.request_id)
 
-        print(f"SMS-MAN RESPONSE: {response}", flush=True)
         logger.info(f"SMS-Man get_sms response: {response}")
 
         if response.get("error_code") == "wait_sms":
@@ -223,7 +241,6 @@ class OrderService:
 
             extra_charge = None
 
-            # ✅ Check if a different service delivered the SMS
             if delivered_application_id and delivered_application_id != ordered_application_id:
                 logger.info(
                     f"Service mismatch: ordered {ordered_application_id}, "
@@ -248,7 +265,6 @@ class OrderService:
                             ))
                         )
 
-                        # Only charge extra if delivered price is higher
                         if delivered_price > order.cost:
                             difference = delivered_price - order.cost
 
@@ -284,7 +300,7 @@ class OrderService:
             await db.commit()
 
             order.sms_text = sms_text
-            order.extra_charge = extra_charge  # attach for display in poller
+            order.extra_charge = extra_charge
 
         return order
 
