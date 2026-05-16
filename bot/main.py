@@ -15,6 +15,7 @@ from bot.handlers.orders import router as orders_router
 from bot.handlers.profile import router as profile_router
 from bot.handlers.support import router as support_router
 from bot.handlers.admin import router as admin_router
+from bot.handlers.compatible import router as compatible_router
 
 from workers.cleanup import cleanup_worker  # ✅ added
 
@@ -32,6 +33,7 @@ async def main():
     dp.include_router(profile_router)
     dp.include_router(support_router)
     dp.include_router(admin_router)
+    dp.include_router(compatible_router)
 
     await bot.delete_webhook(drop_pending_updates=True)
 
