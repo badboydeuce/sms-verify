@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func, text, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies.db import get_db
@@ -40,11 +40,17 @@ async def admin_stats(db: AsyncSession = Depends(get_db)):
     users_result = await db.execute(select(func.count(User.id)))
     total_users = users_result.scalar() or 0
 
+    # ✅ Active users — users with at least one order
+    active_result = await db.execute(
+        select(func.count(distinct(Order.user_id)))
+    )
+    active_users = active_result.scalar() or 0
+
     # Total orders
     orders_result = await db.execute(select(func.count(Order.id)))
     total_orders = orders_result.scalar() or 0
 
-    # Total revenue — use raw SQL to avoid enum casting issues
+    # Total revenue
     revenue_result = await db.execute(
         text("""
             SELECT COALESCE(SUM(amount), 0)
@@ -67,11 +73,88 @@ async def admin_stats(db: AsyncSession = Depends(get_db)):
 
     return {
         "total_users": total_users,
+        "active_users": active_users,          # ✅ new
         "total_orders": total_orders,
         "total_revenue": total_revenue,
         "total_wallet_balance": total_wallet_balance,
         "orders_by_status": orders_by_status
     }
+
+
+# ====================== USER LIST ======================
+@router.get("/api/admin/users")
+async def list_users(
+    page: int = 1,
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db)
+):
+    offset = (page - 1) * limit
+
+    result = await db.execute(
+        select(User)
+        .order_by(User.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    users = result.scalars().all()
+
+    total_result = await db.execute(select(func.count(User.id)))
+    total = total_result.scalar() or 0
+    total_pages = (total + limit - 1) // limit
+
+    return {
+        "users": [
+            {
+                "telegram_id": u.telegram_id,
+                "username": u.username,
+                "balance": float(u.balance),
+                "is_admin": u.is_admin,
+                "created_at": u.created_at.strftime("%Y-%m-%d")
+            }
+            for u in users
+        ],
+        "page": page,
+        "total_pages": total_pages,
+        "total": total
+    }
+
+
+# ====================== PROVIDER BALANCES ======================
+@router.get("/api/admin/balances")
+async def provider_balances():
+    import httpx
+    import os
+
+    results = {}
+
+    # SMS-Man balance
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(
+                "https://api.sms-man.com/control/get-balance",
+                params={"token": os.getenv("SMSMAN_TOKEN")}
+            )
+            data = response.json()
+            results["smsman"] = float(data.get("balance", 0))
+    except Exception as e:
+        results["smsman"] = f"Error: {str(e)}"
+
+    # 5sim balance
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(
+                "https://5sim.net/v1/user/profile",
+                headers={
+                    "Authorization": f"Bearer {os.getenv('FIVESIM_TOKEN')}",
+                    "Accept": "application/json"
+                }
+            )
+            data = response.json()
+            results["fivesim"] = float(data.get("balance", 0))
+    except Exception as e:
+        results["fivesim"] = f"Error: {str(e)}"
+
+    return results
 
 
 # ====================== CREDIT USER ======================
