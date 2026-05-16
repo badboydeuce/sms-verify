@@ -439,13 +439,36 @@ async def fivesim_buy(callback: CallbackQuery, callback_data: BuyCallback, db_us
     processing = await callback.message.edit_text("⏳ Purchasing number from 5sim...")
 
     try:
-        response = await FiveSimService.buy_activation(country, product)
-
-        if "phone" not in response:          # ✅ correct indent
-            await processing.edit_text("❌ Could not get number.")
-            return
-
         async with AsyncSessionLocal() as db:
+            from uuid import uuid4
+            from core.services.wallet_service import WalletService
+
+            reference = f"5sim_{uuid4()}"
+
+            # ✅ Debit wallet first — raises InsufficientBalance if not enough funds
+            await WalletService.debit_balance(
+                db=db,
+                user_id=db_user.id,
+                amount=price_ngn,
+                reference=reference,
+                description=f"{product.title()} via 5sim"
+            )
+
+            # ✅ Buy from 5sim after wallet check passes
+            response = await FiveSimService.buy_activation(country, product)
+
+            if "phone" not in response:
+                # ✅ Refund if 5sim fails
+                await WalletService.credit_balance(
+                    db=db,
+                    user_id=db_user.id,
+                    amount=price_ngn,
+                    reference=f"refund_{reference}",
+                    description=f"Refund: 5sim failed for {product.title()}"
+                )
+                await processing.edit_text("❌ Could not get number.")
+                return
+
             order = await OrderService.create_activation_order(
                 db=db,
                 user_id=db_user.id,
