@@ -19,7 +19,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(
-        BigInteger,          # ✅ was default Integer
+        BigInteger,
         primary_key=True
     )
 
@@ -42,6 +42,13 @@ class User(Base):
     is_admin: Mapped[bool] = mapped_column(
         Boolean,
         default=False
+    )
+
+    currency: Mapped[str] = mapped_column(  # ✅ new
+        String(10),
+        default="NGN",
+        server_default="NGN",
+        nullable=False
     )
 
     created_at: Mapped[datetime] = mapped_column(
