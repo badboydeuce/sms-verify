@@ -27,6 +27,7 @@ from core.services.fivesim_service import FiveSimService
 from core.services.order_service import OrderService
 from core.exceptions.wallet import InsufficientBalance
 from core.exceptions.smsman import NumberUnavailable, SMSManAPIError
+from core.utils.currency import format_amount  # ✅
 
 from workers.otp_poller import poll_order
 from workers.rental_monitor import monitor_rental
@@ -195,7 +196,7 @@ async def choose_rental_country(
             f"📱 Number: <code>{order.number}</code>\n\n"
             f"🌍 Country: {order.country_name}\n\n"
             f"⏱ Duration: {order.rental_duration}\n\n"
-            f"💰 Cost: ₦{order.cost}\n\n"
+            f"💰 Cost: {format_amount(float(order.cost), db_user.currency)}\n\n"
             f"⏳ Expires: {order.expires_at.strftime('%Y-%m-%d %H:%M UTC')}\n\n"
             f"Use the buttons below to check for incoming SMS.",
             reply_markup=rental_order_keyboard(order.id),
@@ -224,7 +225,7 @@ async def choose_rental_country(
 
 # ====================== CHOOSE COUNTRY (ACTIVATION) ======================
 @router.callback_query(BuyCallback.filter(F.action == "country"))
-async def choose_country(callback: CallbackQuery, callback_data: BuyCallback):
+async def choose_country(callback: CallbackQuery, callback_data: BuyCallback, db_user):
     country_id = callback_data.value
     await callback.message.edit_text("⏳ Fetching live prices...")
 
@@ -237,7 +238,9 @@ async def choose_country(callback: CallbackQuery, callback_data: BuyCallback):
 
         await callback.message.edit_text(
             "📱 <b>Select Service</b>\n\nChoose a service to purchase.",
-            reply_markup=services_keyboard(services, country_id),
+            reply_markup=services_keyboard(
+                services, country_id, currency=db_user.currency
+            ),
             parse_mode="HTML"
         )
 
@@ -250,7 +253,7 @@ async def choose_country(callback: CallbackQuery, callback_data: BuyCallback):
 
 # ====================== 5SIM COUNTRY SELECTED ======================
 @router.callback_query(BuyCallback.filter(F.action == "5sim_country"))
-async def fivesim_country(callback: CallbackQuery, callback_data: BuyCallback):
+async def fivesim_country(callback: CallbackQuery, callback_data: BuyCallback, db_user):
     country = callback_data.value
     await callback.message.edit_text("⏳ Fetching available services...")
 
@@ -265,8 +268,9 @@ async def fivesim_country(callback: CallbackQuery, callback_data: BuyCallback):
 
         kb = InlineKeyboardBuilder()
         for p in products[:40]:
+            price_display = format_amount(p["price_ngn"], db_user.currency)  # ✅
             kb.button(
-                text=f"{p['title']} — ₦{p['price_ngn']:,.0f} ({p['qty']} left)",
+                text=f"{p['title']} — {price_display} ({p['qty']} left)",
                 callback_data=BuyCallback(
                     action="5sim_service",
                     value=f"{country}|{p['name']}|{p['price_ngn']}"
@@ -446,7 +450,6 @@ async def fivesim_buy(callback: CallbackQuery, callback_data: BuyCallback, db_us
 
             reference = f"5sim_{uuid4()}"
 
-            # ✅ Debit wallet first
             await WalletService.debit_balance(
                 db=db,
                 user_id=db_user.id,
@@ -455,11 +458,9 @@ async def fivesim_buy(callback: CallbackQuery, callback_data: BuyCallback, db_us
                 description=f"{product.title()} via 5sim"
             )
 
-            # ✅ Buy from 5sim
             response = await FiveSimService.buy_activation(country, product)
 
             if "phone" not in response:
-                # ✅ Refund if 5sim fails
                 await WalletService.credit_balance(
                     db=db,
                     user_id=db_user.id,
@@ -470,18 +471,17 @@ async def fivesim_buy(callback: CallbackQuery, callback_data: BuyCallback, db_us
                 await processing.edit_text("❌ Could not get number.")
                 return
 
-            # ✅ Save order with provider="5sim" and chat_id
             order = await OrderService.create_activation_order(
                 db=db,
                 user_id=db_user.id,
                 country_id=country,
                 country_name=country.title(),
-                service_id=str(response["id"]),   # ✅ 5sim order ID
+                service_id=str(response["id"]),
                 service_name=product.title(),
                 price=price_ngn,
-                provider="5sim",                   # ✅ new
-                chat_id=callback.message.chat.id,  # ✅ new
-                message_id=None                    # ✅ set after message sent
+                provider="5sim",
+                chat_id=callback.message.chat.id,
+                message_id=None
             )
 
         msg = await processing.edit_text(
@@ -489,12 +489,11 @@ async def fivesim_buy(callback: CallbackQuery, callback_data: BuyCallback, db_us
             f"📱 Number: <code>{response['phone']}</code>\n\n"
             f"🌍 Country: {country.title()}\n\n"
             f"📦 Service: {product.title()}\n\n"
-            f"💰 Cost: ₦{price_ngn:,.2f}\n\n"
+            f"💰 Cost: {format_amount(float(price_ngn), db_user.currency)}\n\n"
             f"⏳ Waiting for SMS...",
             parse_mode="HTML"
         )
 
-        # ✅ Update message_id now that we have it
         async with AsyncSessionLocal() as db2:
             from sqlalchemy import update
             from core.models.order import Order
@@ -519,7 +518,6 @@ async def fivesim_buy(callback: CallbackQuery, callback_data: BuyCallback, db_us
         await processing.edit_text("❌ Purchase failed. Please try again.")
     finally:
         await callback.answer()
-
 
 
 # ====================== 5SIM POLLER ======================
@@ -725,7 +723,7 @@ async def buy_service(callback: CallbackQuery, callback_data: BuyCallback, db_us
             f"📱 Number: <code>{order.number}</code>\n\n"
             f"🌍 Country: {order.country_name}\n\n"
             f"📦 Service: {order.service_name}\n\n"
-            f"💰 Price: ₦{order.cost}\n\n"
+            f"💰 Price: {format_amount(float(order.cost), db_user.currency)}\n\n"
             f"⏳ Waiting for SMS...",
             reply_markup=activation_order_keyboard(order.id),
             parse_mode="HTML"
