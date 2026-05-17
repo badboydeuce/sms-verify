@@ -20,7 +20,7 @@ async def get_exchange_rate(
 ) -> Decimal:
     rates = {
         "RUB_NGN": HARDCODED_RUB_TO_NGN,
-        "USD_NGN": HARDCODED_USD_TO_NGN,  # ✅ added for 5sim
+        "USD_NGN": HARDCODED_USD_TO_NGN,
     }
     cache_key = f"{from_currency}_{to_currency}"
     return rates.get(cache_key, Decimal("1.0"))
@@ -68,3 +68,13 @@ async def convert_usd_and_markup(
         return apply_rental_markup(amount_ngn)
 
     return apply_markup(amount_ngn)
+
+
+# ====================== DISPLAY FORMATTER ======================
+
+def format_amount(amount: float, currency: str = "NGN") -> str:
+    """Format amount for display in user's preferred currency."""
+    if currency == "USD":
+        usd = float(amount) / float(HARDCODED_USD_TO_NGN)
+        return f"${usd:,.2f}"
+    return f"₦{float(amount):,.2f}"
