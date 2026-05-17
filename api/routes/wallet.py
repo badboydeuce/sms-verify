@@ -74,5 +74,6 @@ async def get_wallet_balance(
 
     return {
         "telegram_id": telegram_id,
-        "balance": float(balance)
+        "balance": float(balance),
+        "currency": user.currency  # ✅ added
     }
