@@ -27,7 +27,7 @@ from core.services.fivesim_service import FiveSimService
 from core.services.order_service import OrderService
 from core.exceptions.wallet import InsufficientBalance
 from core.exceptions.smsman import NumberUnavailable, SMSManAPIError
-from core.utils.currency import format_amount  # ✅
+from core.utils.currency import format_amount
 
 from workers.otp_poller import poll_order
 from workers.rental_monitor import monitor_rental
@@ -268,7 +268,7 @@ async def fivesim_country(callback: CallbackQuery, callback_data: BuyCallback, d
 
         kb = InlineKeyboardBuilder()
         for p in products[:40]:
-            price_display = format_amount(p["price_ngn"], db_user.currency)  # ✅
+            price_display = format_amount(p["price_ngn"], db_user.currency)
             kb.button(
                 text=f"{p['title']} — {price_display} ({p['qty']} left)",
                 callback_data=BuyCallback(
@@ -379,7 +379,7 @@ async def fivesim_search_service_prompt(
 
 
 @router.message(BuyStates.fivesim_search_service)
-async def fivesim_handle_service_search(message: Message, state: FSMContext):
+async def fivesim_handle_service_search(message: Message, state: FSMContext, db_user):  # ✅
     search_term = message.text.strip()
     data = await state.get_data()
     country = data.get("fivesim_country")
@@ -400,8 +400,9 @@ async def fivesim_handle_service_search(message: Message, state: FSMContext):
 
         kb = InlineKeyboardBuilder()
         for p in filtered[:40]:
+            price_display = format_amount(p["price_ngn"], db_user.currency)  # ✅
             kb.button(
-                text=f"{p['title']} — ₦{p['price_ngn']:,.0f} ({p['qty']} left)",
+                text=f"{p['title']} — {price_display} ({p['qty']} left)",
                 callback_data=BuyCallback(
                     action="5sim_service",
                     value=f"{country}|{p['name']}|{p['price_ngn']}"
@@ -646,7 +647,7 @@ async def search_service_prompt(
 
 
 @router.message(BuyStates.search_service)
-async def handle_search_input(message: Message, state: FSMContext):
+async def handle_search_input(message: Message, state: FSMContext, db_user):  # ✅
     data = await state.get_data()
     country_id = data.get("country_id")
     search_term = message.text.strip()
@@ -667,7 +668,11 @@ async def handle_search_input(message: Message, state: FSMContext):
 
         await message.answer(
             f"📱 <b>Results for:</b> <i>{search_term}</i>",
-            reply_markup=services_keyboard(services, country_id, search=search_term),
+            reply_markup=services_keyboard(
+                services, country_id,
+                search=search_term,
+                currency=db_user.currency  # ✅
+            ),
             parse_mode="HTML"
         )
 
