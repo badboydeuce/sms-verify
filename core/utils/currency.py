@@ -4,7 +4,7 @@ from decimal import Decimal
 
 # ====================== MARKUP CONFIG ======================
 
-MARKUP_PERCENT = Decimal("100.0")
+MARKUP_PERCENT = Decimal("80.0")
 RENTAL_MARKUP_PERCENT = Decimal("50.0")
 
 # ====================== HARDCODED FX ======================
